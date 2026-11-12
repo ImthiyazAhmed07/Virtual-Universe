@@ -1125,17 +1125,17 @@ app.get("/api/players", async (req, res) => {
 
     let orderClause = "ORDER BY overall_rating DESC";
     if (sortBy === "runs") {
-      orderClause = "ORDER BY (COALESCE(career_runs,0) + COALESCE(odi_runs,0)) DESC";
+      orderClause = "ORDER BY (COALESCE(career_runs,0) + COALESCE(odi_runs,0) + COALESCE(test_runs,0)) DESC";
     } else if (sortBy === "wickets") {
-      orderClause = "ORDER BY (COALESCE(career_wickets,0) + COALESCE(odi_wickets,0)) DESC";
+      orderClause = "ORDER BY (COALESCE(career_wickets,0) + COALESCE(odi_wickets,0) + COALESCE(test_wickets,0)) DESC";
     } else if (sortBy === "batting") {
       orderClause = "ORDER BY batting_rating DESC";
     } else if (sortBy === "bowling") {
       orderClause = "ORDER BY bowling_rating DESC";
     } else if (sortBy === "centuries") {
-      orderClause = "ORDER BY (COALESCE(career_hundreds,0) + COALESCE(odi_hundreds,0)) DESC";
+      orderClause = "ORDER BY (COALESCE(career_hundreds,0) + COALESCE(odi_hundreds,0) + COALESCE(test_hundreds,0)) DESC";
     } else if (sortBy === "fifties") {
-      orderClause = "ORDER BY (COALESCE(career_fifties,0) + COALESCE(odi_fifties,0)) DESC";
+      orderClause = "ORDER BY (COALESCE(career_fifties,0) + COALESCE(odi_fifties,0) + COALESCE(test_fifties,0)) DESC";
     }
 
     const countRes = await query(`SELECT COUNT(*) as count FROM players ${whereClause}`, params);
@@ -1170,12 +1170,12 @@ app.get("/api/players", async (req, res) => {
         consistent: p.consistent,
       },
       stats: {
-        matches: (p.career_matches || 0) + (p.odi_matches || 0),
-        runs: (p.career_runs || 0) + (p.odi_runs || 0),
-        wickets: (p.career_wickets || 0) + (p.odi_wickets || 0),
-        hundreds: (p.career_hundreds || 0) + (p.odi_hundreds || 0),
-        fifties: (p.career_fifties || 0) + (p.odi_fifties || 0),
-        highestScore: Math.max(p.career_highest_score || 0, p.odi_highest_score || 0),
+        matches: (p.career_matches || 0) + (p.odi_matches || 0) + (p.test_matches || 0),
+        runs: (p.career_runs || 0) + (p.odi_runs || 0) + (p.test_runs || 0),
+        wickets: (p.career_wickets || 0) + (p.odi_wickets || 0) + (p.test_wickets || 0),
+        hundreds: (p.career_hundreds || 0) + (p.odi_hundreds || 0) + (p.test_hundreds || 0),
+        fifties: (p.career_fifties || 0) + (p.odi_fifties || 0) + (p.test_fifties || 0),
+        highestScore: Math.max(p.career_highest_score || 0, p.odi_highest_score || 0, p.test_highest_score || 0),
       },
     }));
 
@@ -1457,26 +1457,30 @@ app.get("/api/players/:id", async (req, res) => {
         careerBallsBowled: player.career_balls_bowled,
         careerRunsConceded: player.career_runs_conceded,
         careerOversBowled: formatCricketOvers(null, player.career_balls_bowled),
-        careerBestFiguresWickets: player.career_best_figures_wickets,
-        careerBestFiguresRuns: player.career_best_figures_runs,
-        odiMatches: player.odi_matches,
-        odiInnings: player.odi_innings,
-        odiRuns: player.odi_runs,
-        odiBallsFaced: player.odi_balls_faced,
-        odiHundreds: player.odi_hundreds,
-        odiFifties: player.odi_fifties,
-        odiHighestScore: player.odi_highest_score,
-        odiWickets: player.odi_wickets,
-        odiOversBowled: formatCricketOvers(null, player.odi_balls_bowled),
-        testMatches: player.test_matches,
-        testInnings: player.test_innings,
-        testRuns: player.test_runs,
-        testBallsFaced: player.test_balls_faced,
-        testHundreds: player.test_hundreds,
-        testFifties: player.test_fifties,
-        testHighestScore: player.test_highest_score,
-        testWickets: player.test_wickets,
-        testOversBowled: formatCricketOvers(null, player.test_balls_bowled),
+        careerBestFiguresWickets: player.career_best_figures_wickets || 0,
+        careerBestFiguresRuns: player.career_best_figures_runs || 0,
+        odiMatches: player.odi_matches || 0,
+        odiInnings: player.odi_innings || 0,
+        odiRuns: player.odi_runs || 0,
+        odiBallsFaced: player.odi_balls_faced || 0,
+        odiHundreds: player.odi_hundreds || 0,
+        odiFifties: player.odi_fifties || 0,
+        odiHighestScore: player.odi_highest_score || 0,
+        odiWickets: player.odi_wickets || 0,
+        odiOversBowled: formatCricketOvers(null, player.odi_balls_bowled || 0),
+        odiBestFiguresWickets: player.odi_best_figures_wickets || 0,
+        odiBestFiguresRuns: player.odi_best_figures_runs || 0,
+        testMatches: player.test_matches || 0,
+        testInnings: player.test_innings || 0,
+        testRuns: player.test_runs || 0,
+        testBallsFaced: player.test_balls_faced || 0,
+        testHundreds: player.test_hundreds || 0,
+        testFifties: player.test_fifties || 0,
+        testHighestScore: player.test_highest_score || 0,
+        testWickets: player.test_wickets || 0,
+        testOversBowled: formatCricketOvers(null, player.test_balls_bowled || 0),
+        testBestFiguresWickets: player.test_best_figures_wickets || 0,
+        testBestFiguresRuns: player.test_best_figures_runs || 0,
       },
       recentPerformances: performances,
     });
@@ -1628,7 +1632,7 @@ app.get("/api/rankings", async (req, res) => {
         runsConceded: Number(r.runs_conceded) || 0,
         economy: r.economy || "0.00",
         bowlingAvg: r.bowling_avg || "0.00",
-        bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
+        bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
       }));
 
       const mostRuns = formatLeaderBatters(batLeadersRes.rows);
@@ -1651,7 +1655,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
-        bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
+        bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
         wickets: Number(r.wickets) || 0,
         matches: Number(r.matches) || 0,
       }));
@@ -1675,13 +1679,21 @@ app.get("/api/rankings", async (req, res) => {
 
     // 2. Domestic Rankings & Leaderboards (Aggregated by format)
     if (scope === "domestic") {
-      let tourneyIds = [];
+      let hsCol = "career_highest_score";
+      let bbiWCol = "career_best_figures_wickets";
+      let bbiRCol = "career_best_figures_runs";
+      let tourneyCondition = "type = 'short' AND UPPER(id) NOT IN ('INTL', 'T20WC', 'EXH', 'EXH20')";
+
       if (format === "test" || format === "first_class") {
-        tourneyIds = ["RT", "CC", "SFS", "CDC", "ASA", "HC", "WIC"];
+        hsCol = "test_highest_score";
+        bbiWCol = "test_best_figures_wickets";
+        bbiRCol = "test_best_figures_runs";
+        tourneyCondition = "type = 'test_match' AND UPPER(id) NOT IN ('INTLTEST', 'WTC')";
       } else if (format === "odi" || format === "list_a") {
-        tourneyIds = ["VHT", "C1C", "FT", "DPL", "GAK", "DJT", "ODC"];
-      } else {
-        tourneyIds = ["SMAT", "BBL", "TH", "C2C", "D2C", "A2C", "HK2C", "TCC", "VSL", "N2C", "R2C"];
+        hsCol = "odi_highest_score";
+        bbiWCol = "odi_best_figures_wickets";
+        bbiRCol = "odi_best_figures_runs";
+        tourneyCondition = "type = 'odi' AND UPPER(id) NOT IN ('INTL50', 'INTL50_S2', 'ODIWC', 'EXH50')";
       }
 
       const [topBatters, topBowlers, hsRes, bbiRes] = await Promise.all([
@@ -1690,18 +1702,18 @@ app.get("/api/rankings", async (req, res) => {
                  MAX(p.nationality) as nationality,
                  SUM(tps.runs) as runs, 
                  SUM(tps.matches) as matches,
-                 MAX(tps.highest_score) as highest_score,
+                 MAX(p.${hsCol}) as highest_score,
                  SUM(tps.hundreds) as total_hundreds, 
                  SUM(tps.fifties) as total_fifties,
                  ROUND(SUM(tps.runs)::numeric / GREATEST(1, SUM(tps.dismissals))::numeric, 2) as batting_avg,
                  ROUND((SUM(tps.runs)::numeric / GREATEST(1, SUM(tps.balls_faced))::numeric) * 100, 1) as strike_rate
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
-          WHERE UPPER(tps.tournament_id) = ANY($1::text[])
+          WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
           GROUP BY tps.player_id, tps.player_name
           ORDER BY runs DESC
           LIMIT 25
-        `, [tourneyIds]),
+        `),
         query(`
           SELECT tps.player_id as id, tps.player_name as name, 
                  MAX(p.nationality) as nationality,
@@ -1709,46 +1721,48 @@ app.get("/api/rankings", async (req, res) => {
                  SUM(tps.matches) as matches,
                  SUM(tps.balls_bowled) as balls_bowled,
                  SUM(tps.runs_conceded) as runs_conceded,
-                 MAX(tps.best_wickets) as best_wickets,
-                 MIN(tps.best_runs) as best_runs,
+                 MAX(p.${bbiWCol}) as best_wickets,
+                 MIN(CASE WHEN p.${bbiRCol} > 0 THEN p.${bbiRCol} ELSE 999 END) as best_runs,
                  ROUND((SUM(tps.runs_conceded)::numeric / GREATEST(1, SUM(tps.balls_bowled))::numeric) * 6, 2) as economy,
                  ROUND(SUM(tps.runs_conceded)::numeric / GREATEST(1, SUM(tps.wickets))::numeric, 2) as bowling_avg
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
-          WHERE UPPER(tps.tournament_id) = ANY($1::text[])
+          WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
           GROUP BY tps.player_id, tps.player_name
           ORDER BY wickets DESC
           LIMIT 25
-        `, [tourneyIds]),
+        `),
         query(`
           SELECT tps.player_id as id, tps.player_name as name,
                  MAX(p.nationality) as nationality,
-                 MAX(tps.highest_score) as score,
+                 MAX(p.${hsCol}) as score,
                  SUM(tps.runs) as runs,
                  SUM(tps.hundreds) as hundreds,
                  SUM(tps.fifties) as fifties,
                  SUM(tps.matches) as matches
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
-          WHERE UPPER(tps.tournament_id) = ANY($1::text[]) AND tps.highest_score > 0
+          WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
+            AND p.${hsCol} > 0
           GROUP BY tps.player_id, tps.player_name
           ORDER BY score DESC
           LIMIT 25
-        `, [tourneyIds]),
+        `),
         query(`
           SELECT tps.player_id as id, tps.player_name as name,
                  MAX(p.nationality) as nationality,
-                 MAX(tps.best_wickets) as best_wickets,
-                 MIN(tps.best_runs) as best_runs,
+                 MAX(p.${bbiWCol}) as best_wickets,
+                 MIN(CASE WHEN p.${bbiRCol} > 0 THEN p.${bbiRCol} ELSE 999 END) as best_runs,
                  SUM(tps.wickets) as wickets,
                  SUM(tps.matches) as matches
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
-          WHERE UPPER(tps.tournament_id) = ANY($1::text[]) AND tps.best_wickets > 0
+          WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
+            AND p.${bbiWCol} > 0
           GROUP BY tps.player_id, tps.player_name
           ORDER BY best_wickets DESC, best_runs ASC
           LIMIT 25
-        `, [tourneyIds]),
+        `),
       ]);
 
       const batting = topBatters.rows.map((r, idx) => ({
@@ -1782,19 +1796,23 @@ app.get("/api/rankings", async (req, res) => {
         fifties: Number(r.total_fifties) || 0,
       }));
 
-      const mostWickets = topBowlers.rows.map((r, idx) => ({
-        rank: idx + 1,
-        id: r.id,
-        name: r.name,
-        country: formatCountry(r.nationality),
-        matches: Number(r.matches) || 0,
-        wickets: Number(r.wickets) || 0,
-        overs: formatCricketOvers(null, Number(r.balls_bowled) || 0),
-        runsConceded: Number(r.runs_conceded) || 0,
-        economy: r.economy || "0.00",
-        bowlingAvg: r.bowling_avg || "0.00",
-        bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
-      }));
+      const mostWickets = topBowlers.rows.map((r, idx) => {
+        const bbiRuns = r.best_runs === 999 ? 0 : (r.best_runs || 0);
+        const bbiStr = (r.best_wickets > 0 || bbiRuns > 0) ? `${r.best_wickets || 0}/${bbiRuns}` : "-";
+        return {
+          rank: idx + 1,
+          id: r.id,
+          name: r.name,
+          country: formatCountry(r.nationality),
+          matches: Number(r.matches) || 0,
+          wickets: Number(r.wickets) || 0,
+          overs: formatCricketOvers(null, Number(r.balls_bowled) || 0),
+          runsConceded: Number(r.runs_conceded) || 0,
+          economy: r.economy || "0.00",
+          bowlingAvg: r.bowling_avg || "0.00",
+          bestBowling: bbiStr,
+        };
+      });
 
       const highestScores = hsRes.rows.map((r, idx) => ({
         rank: idx + 1,
@@ -1808,15 +1826,19 @@ app.get("/api/rankings", async (req, res) => {
         matches: Number(r.matches) || 0,
       }));
 
-      const bestBowling = bbiRes.rows.map((r, idx) => ({
-        rank: idx + 1,
-        id: r.id,
-        name: r.name,
-        country: formatCountry(r.nationality),
-        bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
-        wickets: Number(r.wickets) || 0,
-        matches: Number(r.matches) || 0,
-      }));
+      const bestBowling = bbiRes.rows.map((r, idx) => {
+        const bbiRuns = r.best_runs === 999 ? 0 : (r.best_runs || 0);
+        const bbiStr = (r.best_wickets > 0 || bbiRuns > 0) ? `${r.best_wickets || 0}/${bbiRuns}` : "-";
+        return {
+          rank: idx + 1,
+          id: r.id,
+          name: r.name,
+          country: formatCountry(r.nationality),
+          bestBowling: bbiStr,
+          wickets: Number(r.wickets) || 0,
+          matches: Number(r.matches) || 0,
+        };
+      });
 
       return res.json({
         success: true,
@@ -1925,7 +1947,7 @@ app.get("/api/rankings", async (req, res) => {
       runsConceded: Number(r.runs_conceded) || 0,
       economy: r.economy || "0.00",
       bowlingAvg: r.bowling_avg || "0.00",
-      bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
+      bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
     }));
 
     const highestScores = hsRes.rows.map((r, idx) => ({
@@ -1945,7 +1967,7 @@ app.get("/api/rankings", async (req, res) => {
       id: r.id,
       name: r.name,
       country: formatCountry(r.nationality),
-      bestBowling: `${r.best_wickets || 0}/${r.best_runs || 0}`,
+      bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
       wickets: Number(r.total_wickets) || 0,
       matches: Number(r.matches) || 0,
     }));

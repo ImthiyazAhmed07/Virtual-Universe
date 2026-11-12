@@ -3,28 +3,28 @@
    ========================================================================== */
 
 :root {
-  --bg-primary: #06070a;
-  --bg-secondary: #0c0d14;
-  --bg-card: rgba(16, 17, 24, 0.88);
-  --bg-card-hover: rgba(26, 27, 36, 0.95);
-  --bg-glass: rgba(14, 15, 22, 0.75);
+  --bg-primary: #07090e;
+  --bg-secondary: #0e111a;
+  --bg-card: rgba(16, 20, 30, 0.85);
+  --bg-card-hover: rgba(24, 29, 44, 0.94);
+  --bg-glass: rgba(12, 16, 25, 0.75);
   
   --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-glow: rgba(255, 42, 95, 0.35);
-  --border-red: rgba(255, 42, 95, 0.4);
-  --border-gold: rgba(255, 215, 0, 0.4);
+  --border-glow: rgba(245, 183, 0, 0.35);
+  --border-red: rgba(230, 28, 56, 0.4);
+  --border-gold: rgba(245, 183, 0, 0.4);
   
   --text-main: #f8fafc;
   --text-secondary: #cbd5e1;
-  --text-muted: #818c9e;
+  --text-muted: #8492a6;
   
-  --accent-crimson: #ff2a5f;
-  --accent-red: #e11d48;
-  --accent-gold: #ffd700;
+  --accent-crimson: #e61c38;
+  --accent-red: #ef4444;
+  --accent-gold: #f5b700;
   --accent-amber: #f59e0b;
-  --accent-cyan: #ff2a5f; /* Universal Red & Gold theme: accent mapped to radiant Crimson */
-  --accent-green: #00e676;
-  --accent-purple: #c084fc;
+  --accent-cyan: #00d4ff;
+  --accent-green: #10b981;
+  --accent-purple: #a855f7;
   
   --font-heading: 'Chakra Petch', -apple-system, sans-serif;
   --font-body: 'Inter', -apple-system, sans-serif;
@@ -36,9 +36,9 @@
   --radius-full: 9999px;
   
   --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.65);
-  --shadow-glow-red: 0 0 24px rgba(255, 42, 95, 0.45);
-  --shadow-glow-gold: 0 0 24px rgba(255, 215, 0, 0.45);
-  --shadow-glow-green: 0 0 20px rgba(0, 230, 118, 0.4);
+  --shadow-glow-red: 0 0 20px rgba(230, 28, 56, 0.4);
+  --shadow-glow-gold: 0 0 20px rgba(245, 183, 0, 0.4);
+  --shadow-glow-green: 0 0 16px rgba(16, 185, 129, 0.4);
 }
 
 * {
@@ -50,8 +50,9 @@
 body {
   background-color: var(--bg-primary);
   background-image: 
-    radial-gradient(circle at 12% 15%, rgba(255, 42, 95, 0.08) 0%, transparent 45%),
-    radial-gradient(circle at 88% 75%, rgba(255, 215, 0, 0.06) 0%, transparent 45%);
+    radial-gradient(circle at 10% 12%, rgba(230, 28, 56, 0.07) 0%, transparent 45%),
+    radial-gradient(circle at 90% 70%, rgba(245, 183, 0, 0.06) 0%, transparent 45%),
+    radial-gradient(circle at 50% 40%, rgba(0, 212, 255, 0.02) 0%, transparent 60%);
   background-attachment: fixed;
   color: var(--text-main);
   font-family: var(--font-body);
@@ -82,7 +83,7 @@ a {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(8, 11, 17, 0.88);
+  background: rgba(9, 11, 18, 0.90);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border-subtle);
@@ -99,7 +100,9 @@ a {
 .brand-group {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .brand-logo {
@@ -107,34 +110,58 @@ a {
   align-items: center;
   gap: 12px;
   cursor: pointer;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.brand-logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--accent-gold);
+  box-shadow: 0 0 14px rgba(245, 183, 0, 0.35);
+  flex-shrink: 0;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.brand-logo:hover .brand-logo-img {
+  transform: scale(1.06) rotate(4deg);
+  box-shadow: 0 0 20px rgba(245, 183, 0, 0.6);
 }
 
 .logo-icon {
   font-size: 26px;
-  filter: drop-shadow(0 0 10px rgba(255, 210, 20, 0.6));
+  filter: drop-shadow(0 0 10px rgba(245, 183, 0, 0.6));
 }
 
 .brand-text {
   display: flex;
   flex-direction: column;
+  white-space: nowrap;
+  line-height: 1.15;
+  flex-shrink: 0;
 }
 
 .brand-title {
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 19px;
+  font-size: clamp(16px, 1.6vw, 19px);
   letter-spacing: 0.8px;
-  background: linear-gradient(135deg, #ffffff 25%, #ffd700 65%, #ff2a5f 100%);
+  white-space: nowrap;
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent-gold) 75%, var(--accent-crimson) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .brand-subtitle {
   font-family: var(--font-heading);
-  font-size: 10px;
+  font-size: clamp(8.5px, 0.85vw, 10px);
   font-weight: 600;
   letter-spacing: 1.5px;
   color: var(--accent-gold);
+  white-space: nowrap;
+  opacity: 0.9;
 }
 
 .live-status-pill {
@@ -143,8 +170,8 @@ a {
   gap: 8px;
   padding: 4px 12px;
   border-radius: var(--radius-full);
-  background: rgba(0, 230, 118, 0.12);
-  border: 1px solid rgba(0, 230, 118, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
   color: var(--accent-green);
   font-family: var(--font-heading);
   font-size: 11px;
@@ -1415,6 +1442,21 @@ input:checked + .slider:before { transform: translateX(14px); }
 .footer-col {
   max-width: 440px;
 }
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.footer-logo-img {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--accent-gold);
+  box-shadow: 0 0 10px rgba(245, 183, 0, 0.3);
+  flex-shrink: 0;
+}
 .footer-desc {
   font-size: 13px;
   color: var(--text-muted);
@@ -2497,6 +2539,30 @@ input:checked + .slider:before { transform: translateX(14px); }
    Responsive Adjustments & Media Queries
    ========================================================================== */
 
+@media (max-width: 1180px) and (min-width: 769px) {
+  .header-inner {
+    gap: 10px;
+  }
+  .brand-group {
+    gap: 10px;
+  }
+  .brand-logo-img {
+    width: 38px;
+    height: 38px;
+  }
+  .brand-subtitle {
+    display: none;
+  }
+  .nav-btn {
+    padding: 6px 10px;
+    font-size: 13px;
+    gap: 6px;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+}
+
 @media (max-width: 960px) {
   .leaders-two-col {
     grid-template-columns: 1fr;
@@ -2534,11 +2600,21 @@ input:checked + .slider:before { transform: translateX(14px); }
     gap: 10px;
     flex-wrap: nowrap;
   }
+  .brand-logo-img {
+    width: 36px;
+    height: 36px;
+  }
+  .brand-title {
+    font-size: 16px;
+  }
   .brand-subtitle {
     display: none;
   }
   .nav-links {
     display: none; /* Managed by mobile-bottom-nav */
+  }
+  .footer-brand {
+    justify-content: center;
   }
 
   .container {

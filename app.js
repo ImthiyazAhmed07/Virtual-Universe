@@ -2021,7 +2021,7 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.careerHundreds || 0}</td>
             <td style="text-align: right;">${p.careerFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.careerWickets || 0}</td>
-            <td style="text-align: right;">${p.careerBestFiguresWickets || 0}/${p.careerBestFiguresRuns || 0}</td>
+            <td style="text-align: right; font-weight: 600;">${(p.careerBestFiguresWickets > 0 || p.careerBestFiguresRuns > 0) ? `${p.careerBestFiguresWickets || 0}/${p.careerBestFiguresRuns || 0}` : "-"}</td>
           </tr>
           <tr>
             <td style="font-weight: 700; color: #fff;">One Day Internationals (ODI)</td>
@@ -2031,7 +2031,7 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.odiHundreds || 0}</td>
             <td style="text-align: right;">${p.odiFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.odiWickets || 0}</td>
-            <td style="text-align: right;">${p.odiBestFiguresWickets || 0}/${p.odiBestFiguresRuns || 0}</td>
+            <td style="text-align: right; font-weight: 600;">${(p.odiBestFiguresWickets > 0 || p.odiBestFiguresRuns > 0) ? `${p.odiBestFiguresWickets || 0}/${p.odiBestFiguresRuns || 0}` : "-"}</td>
           </tr>
           <tr>
             <td style="font-weight: 700; color: #fff;">Test Matches</td>
@@ -2041,7 +2041,7 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.testHundreds || 0}</td>
             <td style="text-align: right;">${p.testFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.testWickets || 0}</td>
-            <td style="text-align: right;">${p.testBestFiguresWickets || 0}/${p.testBestFiguresRuns || 0}</td>
+            <td style="text-align: right; font-weight: 600;">${(p.testBestFiguresWickets > 0 || p.testBestFiguresRuns > 0) ? `${p.testBestFiguresWickets || 0}/${p.testBestFiguresRuns || 0}` : "-"}</td>
           </tr>
         </tbody>
       </table>
