@@ -380,89 +380,265 @@ async function computeTournamentStandingsData(tourneyId) {
   const getTeamGroup = (tId, tName) => {
     if (!config.teamGroups) return null;
     if (config.teamGroups[String(tId)]) return config.teamGroups[String(tId)];
-    if (config.teamGroups[tName]) return config.teamGroups[tName];
+    const clean = (tName || "").replace(/\s+/g, " ").trim();
+    if (config.teamGroups[clean]) return config.teamGroups[clean];
+    if (config.teamGroups[clean.toLowerCase()]) return config.teamGroups[clean.toLowerCase()];
     return null;
   };
 
-  // League match cut-off calculation
-  const sortedCounts = allTeams.map((t) => t.count).sort((a, b) => a - b);
-  const numTeams = allTeams.length;
-  let leagueK = sortedCounts[0] || 0;
-  if (numTeams >= 6) {
-    const regularTeams = sortedCounts.slice(0, Math.max(1, numTeams - 4));
-    leagueK = Math.max(...regularTeams);
-  }
+  const isSuperTeam = (tId, tName) => {
+    if (!config.superStageEnabled || !config.superStageConfig?.teams) return false;
+    const sId = String(tId);
+    const cleanName = (tName || "").replace(/\s+/g, " ").trim().toLowerCase();
+    return config.superStageConfig.teams.some((t) => {
+      const s = String(t).trim().toLowerCase();
+      return s === sId || s === cleanName;
+    });
+  };
 
-  const roundRobinMatches = [];
-  const currentCounts = new Map();
-  for (const m of completedMatches) {
-    const aCount = currentCounts.get(m.team_a_id) || 0;
-    const bCount = currentCounts.get(m.team_b_id) || 0;
-    if (aCount < leagueK && bCount < leagueK) {
-      currentCounts.set(m.team_a_id, aCount + 1);
-      currentCounts.set(m.team_b_id, bCount + 1);
-      roundRobinMatches.push(m);
+  const getSuperStageTeamSubgroup = (tId, tName) => {
+    if (!config.superStageEnabled || !config.superStageConfig?.groups) return null;
+    const sId = String(tId);
+    const cleanName = (tName || "").replace(/\s+/g, " ").trim().toLowerCase();
+    for (const [subgroup, teams] of Object.entries(config.superStageConfig.groups)) {
+      if (Array.isArray(teams)) {
+        const match = teams.some((t) => {
+          const s = String(t).trim().toLowerCase();
+          return s === sId || s === cleanName;
+        });
+        if (match) return subgroup;
+      }
     }
-  }
+    return null;
+  };
 
-  const overallRows = computeStandingsFromMatches(allTeams, roundRobinMatches, inningsRes.rows, isTest);
-  const defaultQualify = config.qualifyCount ?? 4;
-  overallRows.forEach((r, idx) => {
-    r.isQualified = idx < defaultQualify;
-  });
+  const getSuperStageUniqueGroups = () => {
+    if (!config.superStageEnabled || !config.superStageConfig?.groups) return [];
+    return Object.keys(config.superStageConfig.groups).filter((g) => g.trim().length > 0).sort((a, b) => a.localeCompare(b));
+  };
 
-  const groupRows = {};
-  if (config.groupsEnabled && uniqueGroups.length > 0) {
-    for (const grp of uniqueGroups) {
-      const teamsInGroup = allTeams.filter((t) => {
-        const assigned = getTeamGroup(t.id, t.name);
-        return assigned && assigned.toLowerCase() === grp.toLowerCase();
-      });
-      const gRows = computeStandingsFromMatches(teamsInGroup, roundRobinMatches, inningsRes.rows, isTest);
-      const gQualify = config.groupQualifyCounts?.[grp] ?? 2;
-      gRows.forEach((r, idx) => {
-        r.isQualified = idx < gQualify;
-      });
-      groupRows[grp] = gRows;
+  const getSuperStageGroupQualifyCount = (subgroup) => {
+    if (subgroup && config.superStageConfig?.groupQualifyCounts) {
+      const clean = subgroup.trim();
+      if (config.superStageConfig.groupQualifyCounts[clean] !== undefined) {
+        return config.superStageConfig.groupQualifyCounts[clean];
+      }
+      for (const [k, v] of Object.entries(config.superStageConfig.groupQualifyCounts)) {
+        if (k.toLowerCase() === clean.toLowerCase()) return v;
+      }
     }
-  }
-  groupRows["Overall"] = overallRows;
+    return config.superStageConfig?.qualifyCount ?? 4;
+  };
 
-  // Super Stage Check
   const hasSuper = Boolean(config.superStageEnabled);
   const superName = config.superStageConfig?.name || "Super Stage";
+
   let superStageRows = [];
-  const superStageGroups = [];
+  let superStageGroups = [];
   const superStageGroupRows = {};
+  let groupRows = {};
+  let overallRows = [];
 
   if (hasSuper) {
-    let superTeams = [];
-    if (Array.isArray(config.superStageConfig?.teams) && config.superStageConfig.teams.length > 0) {
-      const sNames = new Set(config.superStageConfig.teams.map((x) => String(x).toLowerCase().trim()));
-      superTeams = allTeams.filter((t) => sNames.has(t.name.toLowerCase().trim()) || sNames.has(String(t.id)));
-    } else {
-      // Auto-detect qualifiers
-      if (config.groupsEnabled && uniqueGroups.length > 0) {
-        for (const grp of uniqueGroups) {
-          const gR = groupRows[grp] || [];
-          const qCount = config.groupQualifyCounts?.[grp] ?? 2;
-          for (let i = 0; i < Math.min(qCount, gR.length); i++) {
-            const found = allTeams.find((t) => t.name.toLowerCase().trim() === gR[i].name.toLowerCase().trim());
-            if (found && !superTeams.some((st) => st.id === found.id)) superTeams.push(found);
-          }
+    let superTeams = allTeams.filter((t) => isSuperTeam(t.id, t.name));
+    const nonSuperTeams = allTeams.filter((t) => !isSuperTeam(t.id, t.name));
+
+    if (Array.isArray(config.superStageConfig?.teams)) {
+      for (const configuredTeam of config.superStageConfig.teams) {
+        const str = String(configuredTeam).trim();
+        if (!str) continue;
+        const alreadyPresent = superTeams.some(
+          (st) => String(st.id) === str || st.name.toLowerCase() === str.toLowerCase()
+        );
+        if (!alreadyPresent) {
+          superTeams.push({ id: /^\d+$/.test(str) ? Number(str) : -superTeams.length - 1, name: str, count: 0 });
         }
-      } else {
-        superTeams = allTeams.slice(0, 6);
       }
     }
 
-    if (superTeams.length > 0) {
-      superStageRows = computeStandingsFromMatches(superTeams, completedMatches, inningsRes.rows, isTest);
-      const sQualify = config.superStageConfig?.qualifyCount ?? 4;
-      superStageRows.forEach((r, idx) => {
-        r.isQualified = idx < sQualify;
-      });
+    // Determine Stage 1 cutoff matches per team
+    let stage1K = 0;
+    if (config.superStageConfig?.stage1MatchesPerTeam && config.superStageConfig.stage1MatchesPerTeam > 0) {
+      stage1K = config.superStageConfig.stage1MatchesPerTeam;
+    } else if (nonSuperTeams.length > 0) {
+      stage1K = Math.max(...nonSuperTeams.map((t) => t.count));
+    } else {
+      const sorted = allTeams.map((t) => t.count).sort((a, b) => a - b);
+      stage1K = sorted[0] || 0;
     }
+
+    const teamStage1Count = new Map();
+    const stage1Matches = [];
+    const postStage1Matches = [];
+
+    for (const m of completedMatches) {
+      const a1 = teamStage1Count.get(m.team_a_id) || 0;
+      const b1 = teamStage1Count.get(m.team_b_id) || 0;
+      if (a1 < stage1K && b1 < stage1K) {
+        teamStage1Count.set(m.team_a_id, a1 + 1);
+        teamStage1Count.set(m.team_b_id, b1 + 1);
+        stage1Matches.push(m);
+      } else {
+        postStage1Matches.push(m);
+      }
+    }
+
+    overallRows = computeStandingsFromMatches(allTeams, stage1Matches, inningsRes.rows, isTest);
+    const defaultQualify = config.qualifyCount ?? 4;
+    overallRows.forEach((r, idx) => {
+      r.isQualified = idx < defaultQualify;
+    });
+
+    if (config.groupsEnabled && uniqueGroups.length > 0) {
+      for (const grp of uniqueGroups) {
+        const teamsInGroup = allTeams.filter((t) => {
+          const assigned = getTeamGroup(t.id, t.name);
+          return assigned && assigned.toLowerCase() === grp.toLowerCase();
+        });
+        const gRows = computeStandingsFromMatches(teamsInGroup, stage1Matches, inningsRes.rows, isTest);
+        const gQualify = config.groupQualifyCounts?.[grp] ?? 2;
+        gRows.forEach((r, idx) => {
+          r.isQualified = idx < gQualify;
+        });
+        groupRows[grp] = gRows;
+      }
+    }
+    groupRows["Overall"] = overallRows;
+
+    if (superTeams.length > 0) {
+      const teamStage2TotalCounts = new Map();
+      for (const m of postStage1Matches) {
+        if (isSuperTeam(m.team_a_id, m.team_a_name) && isSuperTeam(m.team_b_id, m.team_b_name)) {
+          teamStage2TotalCounts.set(m.team_a_id, (teamStage2TotalCounts.get(m.team_a_id) || 0) + 1);
+          teamStage2TotalCounts.set(m.team_b_id, (teamStage2TotalCounts.get(m.team_b_id) || 0) + 1);
+        }
+      }
+
+      const s2Counts = superTeams.map((t) => teamStage2TotalCounts.get(t.id) || 0).sort((a, b) => a - b);
+      let stage2K = 0;
+      if (s2Counts.length >= 4) {
+        const regular = s2Counts.slice(0, Math.max(1, s2Counts.length - 2));
+        stage2K = Math.max(...regular);
+      } else if (s2Counts.length > 0) {
+        stage2K = s2Counts[0] || 0;
+      }
+
+      const teamStage2Current = new Map();
+      const stage2RoundRobinMatches = [];
+      const superPlayoffMatches = [];
+
+      for (const m of postStage1Matches) {
+        if (isSuperTeam(m.team_a_id, m.team_a_name) && isSuperTeam(m.team_b_id, m.team_b_name)) {
+          const a2 = teamStage2Current.get(m.team_a_id) || 0;
+          const b2 = teamStage2Current.get(m.team_b_id) || 0;
+          if (a2 < stage2K && b2 < stage2K) {
+            teamStage2Current.set(m.team_a_id, a2 + 1);
+            teamStage2Current.set(m.team_b_id, b2 + 1);
+            stage2RoundRobinMatches.push(m);
+          } else {
+            superPlayoffMatches.push(m);
+          }
+        } else {
+          superPlayoffMatches.push(m);
+        }
+      }
+
+      // Points Carried Forward (PCF) calculation
+      const carriedForwardMatches = [];
+      if (config.superStageConfig?.carryForward) {
+        for (const m of stage1Matches) {
+          if (isSuperTeam(m.team_a_id, m.team_a_name) && isSuperTeam(m.team_b_id, m.team_b_name)) {
+            if (config.groupsEnabled) {
+              const grpA = getTeamGroup(m.team_a_id, m.team_a_name);
+              const grpB = getTeamGroup(m.team_b_id, m.team_b_name);
+              if (grpA && grpB && grpA.toLowerCase() === grpB.toLowerCase()) {
+                carriedForwardMatches.push(m);
+              }
+            } else {
+              carriedForwardMatches.push(m);
+            }
+          }
+        }
+      }
+
+      const superStageAllMatches = [...carriedForwardMatches, ...stage2RoundRobinMatches];
+      superStageRows = computeStandingsFromMatches(
+        superTeams,
+        superStageAllMatches,
+        inningsRes.rows,
+        isTest
+      );
+
+      const superQualify = config.superStageConfig?.qualifyCount ?? 4;
+      superStageRows.forEach((r, idx) => {
+        r.isQualified = idx < superQualify;
+      });
+
+      superStageGroups = getSuperStageUniqueGroups();
+      if (superStageGroups.length > 0) {
+        for (const sGrp of superStageGroups) {
+          const teamsInSub = superTeams.filter((t) => {
+            const sub = getSuperStageTeamSubgroup(t.id, t.name);
+            return sub && sub.toLowerCase() === sGrp.toLowerCase();
+          });
+          const subRows = computeStandingsFromMatches(
+            teamsInSub,
+            superStageAllMatches,
+            inningsRes.rows,
+            isTest
+          );
+          const subQ = getSuperStageGroupQualifyCount(sGrp);
+          subRows.forEach((r, idx) => {
+            r.isQualified = idx < subQ;
+          });
+          superStageGroupRows[sGrp] = subRows;
+        }
+      }
+      superStageGroupRows["Overall"] = superStageRows;
+    }
+  } else {
+    // Standard single-stage round-robin match cutoff calculation
+    const sortedCounts = allTeams.map((t) => t.count).sort((a, b) => a - b);
+    const numTeams = allTeams.length;
+    let leagueK = sortedCounts[0] || 0;
+    if (numTeams >= 6) {
+      const regularTeams = sortedCounts.slice(0, Math.max(1, numTeams - 4));
+      leagueK = Math.max(...regularTeams);
+    }
+
+    const roundRobinMatches = [];
+    const currentCounts = new Map();
+    for (const m of completedMatches) {
+      const aCount = currentCounts.get(m.team_a_id) || 0;
+      const bCount = currentCounts.get(m.team_b_id) || 0;
+      if (aCount < leagueK && bCount < leagueK) {
+        currentCounts.set(m.team_a_id, aCount + 1);
+        currentCounts.set(m.team_b_id, bCount + 1);
+        roundRobinMatches.push(m);
+      }
+    }
+
+    overallRows = computeStandingsFromMatches(allTeams, roundRobinMatches, inningsRes.rows, isTest);
+    const defaultQualify = config.qualifyCount ?? 4;
+    overallRows.forEach((r, idx) => {
+      r.isQualified = idx < defaultQualify;
+    });
+
+    if (config.groupsEnabled && uniqueGroups.length > 0) {
+      for (const grp of uniqueGroups) {
+        const teamsInGroup = allTeams.filter((t) => {
+          const assigned = getTeamGroup(t.id, t.name);
+          return assigned && assigned.toLowerCase() === grp.toLowerCase();
+        });
+        const gRows = computeStandingsFromMatches(teamsInGroup, roundRobinMatches, inningsRes.rows, isTest);
+        const gQualify = config.groupQualifyCounts?.[grp] ?? 2;
+        gRows.forEach((r, idx) => {
+          r.isQualified = idx < gQualify;
+        });
+        groupRows[grp] = gRows;
+      }
+    }
+    groupRows["Overall"] = overallRows;
   }
 
   const primaryStandings = (config.groupsEnabled && uniqueGroups.length > 0 && groupRows[uniqueGroups[0]])
@@ -1641,9 +1817,11 @@ app.get("/api/tournaments", async (req, res) => {
   try {
     const tourneysRes = await query("SELECT * FROM tournaments ORDER BY name ASC");
     const countsRes = await query(`
-      SELECT tournament_id, count(*) as count
-      FROM tournament_matches
-      GROUP BY tournament_id
+      SELECT tm.tournament_id, count(m.id) as count
+      FROM tournament_matches tm
+      JOIN matches m ON m.id = tm.match_id
+      WHERE m.status = 'completed'
+      GROUP BY tm.tournament_id
     `);
 
     const countMap = new Map();
@@ -1703,7 +1881,16 @@ app.get("/api/tournaments/:id", async (req, res) => {
     // Compute Standings with groups and stages
     const standingsData = await computeTournamentStandingsData(tourneyId);
 
-    // Recent tournament matches
+    // Total completed tournament matches count
+    const countRes = await query(`
+      SELECT count(*) as count
+      FROM tournament_matches tm
+      JOIN matches m ON m.id = tm.match_id
+      WHERE UPPER(tm.tournament_id) = $1 AND m.status = 'completed'
+    `, [tourneyId.toUpperCase()]);
+    const totalCompletedMatches = Number(countRes.rows[0]?.count || 0);
+
+    // Recent tournament matches (up to 30)
     const tourneyMatches = await query(`
       SELECT m.id, m.team_a_id, m.team_b_id, m.team_a_name, m.team_b_name,
              m.team_a_score, m.team_a_wickets, m.team_a_overs,
@@ -1713,14 +1900,24 @@ app.get("/api/tournaments/:id", async (req, res) => {
       JOIN tournament_matches tm ON tm.match_id = m.id
       WHERE UPPER(tm.tournament_id) = $1 AND m.status = 'completed'
       ORDER BY m.id DESC
-      LIMIT 20
+      LIMIT 30
     `, [tourneyId.toUpperCase()]);
 
     const tType = tourney ? tourney.type : "short";
 
     // Format-Aware Top Batters
     const topBattersRes = await query(`
-      SELECT tps.player_id, tps.player_name, tps.matches,
+      SELECT tps.player_id, tps.player_name,
+             CASE 
+               WHEN $1 = 'test_match' THEN GREATEST(COALESCE(tps.test_matches, 0), COALESCE(tps.matches, 0))
+               WHEN $1 = 'odi' THEN GREATEST(COALESCE(tps.odi_matches, 0), COALESCE(tps.matches, 0))
+               ELSE GREATEST(COALESCE(tps.matches, 0), COALESCE(tps.odi_matches, 0), COALESCE(tps.test_matches, 0))
+             END as matches,
+             CASE 
+               WHEN $1 = 'test_match' THEN GREATEST(COALESCE(tps.test_innings, 0), COALESCE(tps.innings, 0))
+               WHEN $1 = 'odi' THEN GREATEST(COALESCE(tps.odi_innings, 0), COALESCE(tps.innings, 0))
+               ELSE GREATEST(COALESCE(tps.innings, 0), COALESCE(tps.odi_innings, 0), COALESCE(tps.test_innings, 0))
+             END as innings,
              CASE 
                WHEN $1 = 'test_match' THEN COALESCE(tps.test_runs, tps.runs, 0)
                WHEN $1 = 'odi' THEN COALESCE(tps.odi_runs, tps.runs, 0)
@@ -1749,7 +1946,12 @@ app.get("/api/tournaments/:id", async (req, res) => {
 
     // Format-Aware Top Bowlers
     const topBowlersRes = await query(`
-      SELECT tps.player_id, tps.player_name, tps.matches,
+      SELECT tps.player_id, tps.player_name,
+             CASE 
+               WHEN $1 = 'test_match' THEN GREATEST(COALESCE(tps.test_matches, 0), COALESCE(tps.matches, 0))
+               WHEN $1 = 'odi' THEN GREATEST(COALESCE(tps.odi_matches, 0), COALESCE(tps.matches, 0))
+               ELSE GREATEST(COALESCE(tps.matches, 0), COALESCE(tps.odi_matches, 0), COALESCE(tps.test_matches, 0))
+             END as matches,
              CASE 
                WHEN $1 = 'test_match' THEN COALESCE(tps.test_wickets, tps.wickets, 0)
                WHEN $1 = 'odi' THEN COALESCE(tps.odi_wickets, tps.wickets, 0)
@@ -1822,7 +2024,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
     res.json({
       success: true,
       tournament: tourney || { id: tourneyId, name: tourneyId, season: "1", type: "short" },
-      matchesCount: tourneyMatches.rows.length,
+      matchesCount: totalCompletedMatches,
       isTest: Boolean(tourney?.type === "test_match"),
       hasGroups: standingsData.hasGroups,
       groups: standingsData.groups,

@@ -858,8 +858,9 @@ function renderPlayers(players) {
         ` : ""}
 
         <div style="margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04); display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
+          <span>Mat: <strong style="color: #fff;">${p.stats.matches}</strong></span>
           <span>Runs: <strong style="color: #fff;">${p.stats.runs.toLocaleString()}</strong> (${p.stats.hundreds}x100)</span>
-          <span>Wickets: <strong style="color: #fff;">${p.stats.wickets}</strong></span>
+          <span>Wkts: <strong style="color: #fff;">${p.stats.wickets}</strong></span>
         </div>
       </div>
     `;
@@ -1610,6 +1611,14 @@ async function loadTournamentDetails(tourneyId) {
     state.activeTournamentData = data;
     metaBadge.textContent = `${(data.tournament.type || "cricket").toUpperCase()} • ${data.matchesCount || 0} MATCHES PLAYED`;
 
+    // Smart default for active stage: if super stage exists and has played matches, default to stage2, else stage1
+    if (data.hasSuperStage) {
+      const hasSuperMatches = Array.isArray(data.superStageRows) && data.superStageRows.some(r => r.played > 0);
+      state.tourneyActiveStage = hasSuperMatches ? "stage2" : "stage1";
+    } else {
+      state.tourneyActiveStage = "stage1";
+    }
+
     renderTourneySubView();
   } catch (err) {
     container.innerHTML = `
@@ -1666,7 +1675,10 @@ function renderStandingsTable(rows, title = "", qualifyCount = 4) {
         <tbody>
           ${rows.map((t, idx) => {
             const isQual = Boolean(t.isQualified !== undefined ? t.isQualified : (idx < qualifyCount));
-            const formBadges = (t.form || "").split(" ").map(f => {
+            const formList = Array.isArray(t.form)
+              ? t.form
+              : String(t.form || "").trim().split(/\s+/).filter(Boolean);
+            const formBadges = formList.map(f => {
               const letter = f.trim().toUpperCase();
               if (letter === "W") return '<span class="form-badge-pill w">W</span>';
               if (letter === "L") return '<span class="form-badge-pill l">L</span>';
@@ -1709,12 +1721,14 @@ function renderTourneySubView() {
     // 1. Points Table / Standings View
     let html = "";
 
-    // If tournament has Super Stage or Groups, render stage switcher tabs
+    // If tournament has Super Stage, render stage switcher tabs
     if (data.hasSuperStage) {
+      const hasSuperMatches = Array.isArray(data.superStageRows) && data.superStageRows.some(r => r.played > 0);
       html += `
         <div class="stage-tabs-group">
           <button class="stage-tab-btn ${state.tourneyActiveStage === 'stage2' ? 'active' : ''}" onclick="setTourneyStage('stage2')">
             <span>⚡ Stage 2: ${data.superStageName || 'Super Stage'}</span>
+            ${hasSuperMatches ? '<span style="font-size: 10px; background: rgba(34,197,94,0.2); color: var(--accent-green); padding: 2px 6px; border-radius: var(--radius-full); font-weight: 700; margin-left: 6px;">ACTIVE</span>' : ''}
           </button>
           <button class="stage-tab-btn ${state.tourneyActiveStage === 'stage1' ? 'active' : ''}" onclick="setTourneyStage('stage1')">
             <span>📋 Stage 1: Preliminary Groups / League</span>
@@ -1730,6 +1744,9 @@ function renderTourneySubView() {
         for (const gName of data.superStageGroups) {
           const gRows = data.superStageGroupRows ? (data.superStageGroupRows[gName] || []) : [];
           html += renderStandingsTable(gRows, `${data.superStageName || 'Super Stage'} • ${gName}`, data.superStageQualifyCount || 2);
+        }
+        if (data.superStageRows && data.superStageRows.length > 0) {
+          html += renderStandingsTable(data.superStageRows, `${data.superStageName || 'Super Stage'} • Overall Standings`, data.superStageQualifyCount || 4);
         }
         html += `</div>`;
       } else {
@@ -1769,7 +1786,7 @@ function renderTourneySubView() {
 
     container.innerHTML = html;
   } else if (view === "leaders") {
-    // 2. Leaders View (Top Batters & Top Bowlers)
+    // 2. Leaders View (Top Batters & Top Bowlers with Matches Played)
     const batters = data.topBatters || [];
     const bowlers = data.topBowlers || [];
 
@@ -1785,6 +1802,7 @@ function renderTourneySubView() {
                 <tr>
                   <th>#</th>
                   <th>Batter</th>
+                  <th style="text-align: right;">Mat</th>
                   <th style="text-align: right;">Runs</th>
                   <th style="text-align: right;">100s/50s</th>
                   <th style="text-align: right;">SR</th>
@@ -1795,11 +1813,12 @@ function renderTourneySubView() {
                   <tr onclick="openPlayerModal(${b.id})" style="cursor: pointer;">
                     <td style="font-weight: 700; color: var(--accent-gold);">#${idx + 1}</td>
                     <td style="font-weight: 600; color: #fff;">${b.name}</td>
+                    <td style="text-align: right; color: var(--text-muted); font-family: var(--font-mono);">${b.matches || 0}</td>
                     <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${b.runs}</td>
                     <td style="text-align: right; color: var(--text-muted);">${b.hundreds} / ${b.fifties}</td>
                     <td style="text-align: right; font-family: var(--font-mono);">${b.strikeRate}</td>
                   </tr>
-                `).join("") : '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">No batting stats recorded yet.</td></tr>'}
+                `).join("") : '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No batting stats recorded yet.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1815,6 +1834,7 @@ function renderTourneySubView() {
                 <tr>
                   <th>#</th>
                   <th>Bowler</th>
+                  <th style="text-align: right;">Mat</th>
                   <th style="text-align: right;">Wkts</th>
                   <th style="text-align: right;">Overs</th>
                   <th style="text-align: right;">Econ</th>
@@ -1825,11 +1845,12 @@ function renderTourneySubView() {
                   <tr onclick="openPlayerModal(${w.id})" style="cursor: pointer;">
                     <td style="font-weight: 700; color: var(--accent-gold);">#${idx + 1}</td>
                     <td style="font-weight: 600; color: #fff;">${w.name}</td>
+                    <td style="text-align: right; color: var(--text-muted); font-family: var(--font-mono);">${w.matches || 0}</td>
                     <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${w.wickets}</td>
                     <td style="text-align: right; color: var(--text-muted);">${formatCricketOvers(w.overs)}</td>
                     <td style="text-align: right; font-family: var(--font-mono);">${w.economy}</td>
                   </tr>
-                `).join("") : '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">No bowling stats recorded yet.</td></tr>'}
+                `).join("") : '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No bowling stats recorded yet.</td></tr>'}
               </tbody>
             </table>
           </div>
