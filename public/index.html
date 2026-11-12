@@ -11,6 +11,20 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- GitHub Pages Notice Banner (shown only on github.io if API disconnected) -->
+  <div id="ghPagesNoticeBanner" class="gh-pages-banner hidden">
+    <div class="banner-inner container">
+      <div class="banner-text">
+        <span class="banner-icon">📡</span>
+        <span><strong>GitHub Pages Static Mode</strong> — To stream live matches and view player stats from your PostgreSQL database, connect your backend API server (e.g., Render, Railway, VPS, or ngrok).</span>
+      </div>
+      <div class="banner-actions">
+        <button class="banner-btn" onclick="openApiModal()">⚙️ Configure Server URL</button>
+        <button class="banner-close" onclick="document.getElementById('ghPagesNoticeBanner').classList.add('hidden')">✕</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Header / Navigation Bar -->
   <header class="site-header">
     <div class="header-inner container">
@@ -51,6 +65,10 @@
       </nav>
 
       <div class="header-actions">
+        <button id="apiStatusPill" class="api-status-pill" onclick="openApiModal()" title="API Backend Server Connection">
+          <span class="api-dot"></span>
+          <span id="apiStatusLabel">API Server</span>
+        </button>
         <div class="auto-refresh-control" title="Auto-refresh match data every 4 seconds">
           <label class="switch">
             <input type="checkbox" id="autoRefreshToggle" checked>
@@ -521,6 +539,34 @@
       <span class="engine-badge">⚡ Real-Time Engine Active</span>
     </div>
   </footer>
+
+  <!-- API Server Config Modal -->
+  <div id="apiConfigModal" class="modal-backdrop hidden">
+    <div class="modal-box api-modal-box">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Backend Server Connection</div>
+        <button class="modal-close" onclick="closeModal('apiConfigModal')">✕</button>
+      </div>
+      <div class="modal-body api-modal-body">
+        <p class="modal-desc">
+          When hosted on <strong>GitHub Pages</strong>, the frontend runs as a static application and needs a public backend server URL (e.g. Render, Railway, VPS, or ngrok) to query your PostgreSQL database and Discord bot.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="apiServerUrlInput">Backend API Server URL</label>
+          <input type="url" id="apiServerUrlInput" class="text-input" placeholder="e.g. https://your-server.onrender.com (or leave empty for local)">
+          <div class="form-hint">Leave blank when running the included <code>server.js</code> on the same domain or localhost:3000.</div>
+        </div>
+        <div id="apiTestStatus" class="api-test-status"></div>
+        <div class="modal-actions-row">
+          <button class="action-btn-secondary" onclick="testApiConnection()">⚡ Test Connection</button>
+          <div class="actions-right">
+            <button class="action-btn-secondary" onclick="setApiBase('')">Reset to Default</button>
+            <button class="action-btn-primary" onclick="setApiBase(document.getElementById('apiServerUrlInput').value)">Save & Connect</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

@@ -63,7 +63,14 @@ Visit `http://localhost:3000` in your browser.
 
 ## ☁️ Deployment Guide
 
-### Deploying to Render
+### Deploying to GitHub Pages (Static Frontend)
+1. Go to your repository **Settings** -> **Pages**.
+2. Under **Build and deployment** -> **Source**: select **"Deploy from a branch"**.
+3. Under **Branch**: choose **`main`** and folder **`/ (root)`**, then click **Save**.
+4. Within 1-2 minutes, your website will be live at `https://imthiyazahmed07.github.io/Virtual-Universe/`.
+5. *Note*: Since GitHub Pages only hosts static files, click the **"⚙️ API Server"** button in the website header to connect your backend API URL (from Render, Railway, or VPS) so the site can display live match scores and database stats!
+
+### Deploying to Render (Full-Stack 24/7 - Recommended)
 1. Create a new **Web Service** on [Render](https://render.com/).
 2. Connect your GitHub repository `ImthiyazAhmed07/Virtual-Universe`.
 3. Set the following build and start commands:

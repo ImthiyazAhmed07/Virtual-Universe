@@ -50,6 +50,111 @@ const state = {
 };
 
 // -----------------------------------------------------------------------------
+// Universal API Base Configuration (Localhost / Remote Hosting / GitHub Pages)
+// -----------------------------------------------------------------------------
+function getApiBase() {
+  if (window.VIRTUAL_CRICKET_API) return window.VIRTUAL_CRICKET_API.replace(/\/+$/, "");
+  const stored = localStorage.getItem("VC_API_URL");
+  if (stored) return stored.trim().replace(/\/+$/, "");
+  return "";
+}
+
+function setApiBase(url) {
+  if (!url || !url.trim()) {
+    localStorage.removeItem("VC_API_URL");
+  } else {
+    let clean = url.trim().replace(/\/+$/, "");
+    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+      clean = "https://" + clean;
+    }
+    localStorage.setItem("VC_API_URL", clean);
+  }
+  updateApiStatusIndicator();
+  closeModal("apiConfigModal");
+  // Reload current views
+  switchTab(state.currentTab);
+  loadOverviewStats();
+}
+
+async function apiFetch(endpoint, options = {}) {
+  const base = getApiBase();
+  const fullUrl = base ? `${base}${endpoint}` : endpoint;
+  return fetch(fullUrl, options);
+}
+
+function updateApiStatusIndicator() {
+  const pill = document.getElementById("apiStatusPill");
+  const label = document.getElementById("apiStatusLabel");
+  const banner = document.getElementById("ghPagesNoticeBanner");
+  const base = getApiBase();
+  const isGhPages = window.location.hostname.endsWith("github.io");
+
+  if (pill && label) {
+    if (base) {
+      pill.className = "api-status-pill connected";
+      try {
+        const u = new URL(base);
+        label.textContent = `API: ${u.hostname}`;
+      } catch {
+        label.textContent = "API: Connected";
+      }
+    } else if (isGhPages) {
+      pill.className = "api-status-pill disconnected";
+      label.textContent = "API: Offline (Configure)";
+    } else {
+      pill.className = "api-status-pill connected";
+      label.textContent = "API: Online";
+    }
+  }
+
+  if (banner) {
+    if (isGhPages && !base) {
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
+  }
+}
+
+function openApiModal() {
+  const modal = document.getElementById("apiConfigModal");
+  const input = document.getElementById("apiServerUrlInput");
+  const statusMsg = document.getElementById("apiTestStatus");
+  if (input) input.value = getApiBase() || "";
+  if (statusMsg) statusMsg.textContent = "";
+  if (modal) modal.classList.remove("hidden");
+}
+
+async function testApiConnection() {
+  const input = document.getElementById("apiServerUrlInput");
+  const statusMsg = document.getElementById("apiTestStatus");
+  if (!input || !statusMsg) return;
+
+  let url = input.value.trim().replace(/\/+$/, "");
+  if (!url) {
+    statusMsg.innerHTML = `<span style="color:var(--text-muted)">Testing default relative origin...</span>`;
+  } else {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = "https://" + url;
+    }
+    statusMsg.innerHTML = `<span style="color:var(--accent-gold)">Connecting to ${url}...</span>`;
+  }
+
+  try {
+    const testUrl = url ? `${url}/api/overview` : `/api/overview`;
+    const res = await fetch(testUrl, { signal: AbortSignal.timeout(6000) });
+    const data = await res.json();
+    if (data.success) {
+      statusMsg.innerHTML = `<span style="color:var(--accent-green)">✅ Connection Successful! (${data.totalMatches} matches recorded in database)</span>`;
+    } else {
+      statusMsg.innerHTML = `<span style="color:var(--accent-red)">⚠️ Server responded with error: ${data.error || "Unknown"}</span>`;
+    }
+  } catch (err) {
+    statusMsg.innerHTML = `<span style="color:var(--accent-red)">❌ Could not reach server: ${err.message}. Ensure CORS is enabled and URL is active.</span>`;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Universal Cricket Overs Formatter Helper
 // -----------------------------------------------------------------------------
 function formatCricketOvers(val, balls) {
@@ -76,6 +181,7 @@ function formatCricketOvers(val, balls) {
 // DOM Content Loaded & Initialization
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  updateApiStatusIndicator();
   initNavigation();
   initAutoRefresh();
   initPlayerSearchDebounce();
@@ -213,7 +319,7 @@ async function loadLiveStreams(isBackground = false) {
   const activeCountTag = document.getElementById("activeMatchCount");
 
   try {
-    const res = await fetch("/api/live");
+    const res = await apiFetch("/api/live");
     const data = await res.json();
 
     if (!data.success) throw new Error(data.error);
@@ -421,7 +527,7 @@ async function loadRecentMatches() {
       url += `&format=${state.recentFormatFilter}`;
     }
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await apiFetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
@@ -504,7 +610,7 @@ async function openScorecardModal(matchId) {
   modalBody.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Fetching official scorecard...</p></div>`;
 
   try {
-    const res = await fetch(`/api/matches/${matchId}`);
+    const res = await apiFetch(`/api/matches/${matchId}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
@@ -659,7 +765,7 @@ async function loadPlayers() {
     if (state.playerBowlingStyleFilter !== "All") params.append("bowlingStyle", state.playerBowlingStyleFilter);
     if (state.playerBattingStyleFilter !== "All") params.append("battingStyle", state.playerBattingStyleFilter);
 
-    const res = await fetch(`/api/players?${params.toString()}`, { signal: AbortSignal.timeout(8000) });
+    const res = await apiFetch(`/api/players?${params.toString()}`, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
@@ -803,7 +909,7 @@ function setupAutocomplete(inputId, dropdownId, onSelect) {
 
     debounce = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/players?search=${encodeURIComponent(q)}&limit=6`);
+        const res = await apiFetch(`/api/players?search=${encodeURIComponent(q)}&limit=6`);
         const data = await res.json();
         if (data.success && data.players.length > 0) {
           dropdown.innerHTML = data.players.map(p => `
@@ -890,7 +996,7 @@ async function runPlayerComparison() {
 
   try {
     const url = `/api/players/compare?p1=${encodeURIComponent(p1Val)}&p2=${encodeURIComponent(p2Val)}&format=${state.compareFormat}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await apiFetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
@@ -1101,7 +1207,7 @@ async function loadRankings() {
 
   try {
     let url = `/api/rankings?scope=${state.rankingsScope}&format=${state.rankingsFormat}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await apiFetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
@@ -1192,7 +1298,7 @@ function renderRankingTable(items) {
 async function loadTournaments() {
   const selectBox = document.getElementById("tournamentSelectBox");
   try {
-    const res = await fetch("/api/tournaments");
+    const res = await apiFetch("/api/tournaments");
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
@@ -1270,7 +1376,7 @@ async function loadTournamentDetails(tourneyId) {
   `;
 
   try {
-    const res = await fetch(`/api/tournaments/${tourneyId}`);
+    const res = await apiFetch(`/api/tournaments/${tourneyId}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
@@ -1571,7 +1677,7 @@ async function openPlayerModal(playerId) {
   modalBody.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Accessing player records...</p></div>`;
 
   try {
-    const res = await fetch(`/api/players/${playerId}`, { signal: AbortSignal.timeout(6000) });
+    const res = await apiFetch(`/api/players/${playerId}`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
@@ -1676,7 +1782,7 @@ async function openPlayerModal(playerId) {
 // -----------------------------------------------------------------------------
 async function loadOverviewStats() {
   try {
-    const res = await fetch("/api/overview");
+    const res = await apiFetch("/api/overview");
     const data = await res.json();
     if (data.success) {
       document.getElementById("footTotalMatches").textContent = data.totalMatches.toLocaleString();

@@ -2612,3 +2612,177 @@ input:checked + .slider:before { transform: translateX(14px); }
   }
 }
 
+/* ==========================================================================
+   GitHub Pages Notice Banner & API Server Configuration Modal
+   ========================================================================== */
+.gh-pages-banner {
+  background: linear-gradient(90deg, rgba(225, 29, 72, 0.25), rgba(255, 215, 0, 0.15));
+  border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  position: relative;
+  z-index: 1000;
+}
+.gh-pages-banner.hidden {
+  display: none !important;
+}
+.banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.banner-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+.banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.banner-btn {
+  background: var(--accent-gold);
+  color: #06070a;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.banner-btn:hover {
+  background: #ffea70;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+.banner-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.banner-close:hover {
+  color: #fff;
+}
+
+/* API Status Pill */
+.api-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.api-status-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: var(--accent-gold);
+}
+.api-status-pill.connected {
+  border-color: rgba(0, 230, 118, 0.35);
+  color: var(--accent-green);
+  background: rgba(0, 230, 118, 0.1);
+}
+.api-status-pill.connected .api-dot {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+.api-status-pill.disconnected {
+  border-color: rgba(255, 179, 0, 0.4);
+  color: var(--accent-gold);
+  background: rgba(255, 179, 0, 0.1);
+}
+.api-status-pill.disconnected .api-dot {
+  background: var(--accent-gold);
+  box-shadow: 0 0 8px var(--accent-gold);
+}
+.api-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--text-muted);
+}
+
+/* API Modal */
+.api-modal-box {
+  max-width: 540px !important;
+}
+.api-modal-body {
+  padding: 24px;
+}
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.text-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+.text-input:focus {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+}
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.api-test-status {
+  font-size: 12px;
+  min-height: 22px;
+  margin-bottom: 16px;
+}
+.modal-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+

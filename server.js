@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import pg from "pg";
 
@@ -1537,9 +1538,14 @@ app.get("/api/overview", async (req, res) => {
 // Static Files & Client-Side Routing
 // -----------------------------------------------------------------------------
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(__dirname));
 
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  const publicIndex = path.join(__dirname, "public", "index.html");
+  if (fs.existsSync(publicIndex)) {
+    return res.sendFile(publicIndex);
+  }
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 // -----------------------------------------------------------------------------
