@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Virtual Cricket | Live Streaming, Matches, Player Stats, Rankings & Tournaments</title>
+  <meta name="description" content="Official website of the Virtual Cricket Esports League. Live match streaming, channel links, real-time ball-by-ball scorecards, player stats, head-to-head comparison, tournaments, and official rankings.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header / Navigation Bar -->
+  <header class="site-header">
+    <div class="header-inner container">
+      <div class="brand-group">
+        <a href="#live" class="brand-logo" onclick="switchTab('live')">
+          <div class="logo-icon">🏏</div>
+          <div class="brand-text">
+            <span class="brand-title">VIRTUAL CRICKET</span>
+            <span class="brand-subtitle">GLOBAL ESPORTS UNIVERSE</span>
+          </div>
+        </a>
+        <div id="liveBadge" class="live-status-pill hidden">
+          <span class="pulse-dot"></span>
+          <span id="liveBadgeText">LIVE STREAMING</span>
+        </div>
+      </div>
+
+      <!-- Desktop Nav -->
+      <nav class="nav-links">
+        <button class="nav-btn active" data-tab="live" onclick="switchTab('live')">
+          <span class="nav-icon">🔴</span> Live Stream
+        </button>
+        <button class="nav-btn" data-tab="matches" onclick="switchTab('matches')">
+          <span class="nav-icon">📊</span> Matches
+        </button>
+        <button class="nav-btn" data-tab="players" onclick="switchTab('players')">
+          <span class="nav-icon">👥</span> Player Stats
+        </button>
+        <button class="nav-btn" data-tab="compare" onclick="switchTab('compare')">
+          <span class="nav-icon">⚔️</span> Compare
+        </button>
+        <button class="nav-btn" data-tab="rankings" onclick="switchTab('rankings')">
+          <span class="nav-icon">🏆</span> Rankings
+        </button>
+        <button class="nav-btn" data-tab="tournaments" onclick="switchTab('tournaments')">
+          <span class="nav-icon">🏟️</span> Tournaments
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <div class="auto-refresh-control" title="Auto-refresh match data every 4 seconds">
+          <label class="switch">
+            <input type="checkbox" id="autoRefreshToggle" checked>
+            <span class="slider round"></span>
+          </label>
+          <span class="control-label">Live Sync</span>
+        </div>
+        <button class="refresh-btn" id="manualRefreshBtn" title="Refresh Now">
+          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="main-content container">
+
+    <!-- TAB 1: LIVE STREAM -->
+    <section id="tab-live" class="tab-section active">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Live Match Broadcast</h1>
+          <p class="section-subtitle">Real-time ball-by-ball streaming from active Discord match arenas</p>
+        </div>
+        <div id="activeMatchCount" class="active-count-tag">Checking streams...</div>
+      </div>
+
+      <!-- Live Matches Container -->
+      <div id="liveStreamContainer" class="live-stream-container">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Connecting to Virtual Cricket live broadcast feeds...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: RECENT MATCHES -->
+    <section id="tab-matches" class="tab-section hidden">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Match Center</h1>
+          <p class="section-subtitle">Completed matches, victory margins, and official scorecards</p>
+        </div>
+        <div class="filter-group">
+          <button class="filter-pill active" onclick="filterRecentMatches('all')">All</button>
+          <button class="filter-pill" onclick="filterRecentMatches('odi')">ODI</button>
+          <button class="filter-pill" onclick="filterRecentMatches('t20')">T20</button>
+          <button class="filter-pill" onclick="filterRecentMatches('test')">Test</button>
+        </div>
+      </div>
+
+      <div id="recentMatchesList" class="matches-grid">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading recent matches...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: PLAYERS & STATS -->
+    <section id="tab-players" class="tab-section hidden">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Player Directory & Stats</h1>
+          <p class="section-subtitle">Search 800+ international & domestic stars, career numbers, and specialized traits</p>
+        </div>
+      </div>
+
+      <!-- Search & Advanced Filters Toolbar -->
+      <div class="players-toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="playerSearchInput" placeholder="Search player by name (e.g. Matthew Botha, Tanay Jain, Qais Farahi)...">
+        </div>
+
+        <div class="select-filters">
+          <div class="custom-select-wrap">
+            <label>Nationality</label>
+            <select id="countrySelect" onchange="applyPlayerFilters()">
+              <option value="All">All Nations</option>
+              <option value="India">India</option>
+              <option value="South Africa">South Africa</option>
+              <option value="Australia">Australia</option>
+              <option value="England">England</option>
+              <option value="Afghanistan">Afghanistan</option>
+              <option value="Bangladesh">Bangladesh</option>
+              <option value="Sri Lanka">Sri Lanka</option>
+              <option value="West Indies">West Indies</option>
+              <option value="Pakistan">Pakistan</option>
+              <option value="New Zealand">New Zealand</option>
+              <option value="Netherlands">Netherlands</option>
+              <option value="Hong Kong">Hong Kong</option>
+              <option value="Ireland">Ireland</option>
+              <option value="Zimbabwe">Zimbabwe</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Role</label>
+            <select id="roleSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Roles</option>
+              <option value="batter">Batters</option>
+              <option value="bowler">Bowlers</option>
+              <option value="all_rounder">All-Rounders</option>
+              <option value="wicket_keeper">Wicket Keepers</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Rating Tier</label>
+            <select id="tierSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Tiers</option>
+              <option value="elite">💎 Elite (80+ OVR)</option>
+              <option value="gold">🥇 Gold (75-79 OVR)</option>
+              <option value="silver">🥈 Silver (70-74 OVR)</option>
+              <option value="bronze">🥉 Bronze (&lt;70 OVR)</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Special Trait</label>
+            <select id="traitSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Traits</option>
+              <option value="pressureHandler">Pressure Handler</option>
+              <option value="clutchPerformer">Clutch Performer</option>
+              <option value="bigMatchPlayer">Big Match Player</option>
+              <option value="chaseMaster">Chase Master</option>
+              <option value="deathOversExpert">Death Overs Expert</option>
+              <option value="consistent">Consistent</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Bowling Style</label>
+            <select id="bowlingStyleSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Bowling Styles</option>
+              <option value="right_arm_fast">Right-Arm Fast</option>
+              <option value="left_arm_fast">Left-Arm Fast</option>
+              <option value="right_arm_fast_medium">Right-Arm Fast Medium</option>
+              <option value="left_arm_fast_medium">Left-Arm Fast Medium</option>
+              <option value="off_spin">Off Spin</option>
+              <option value="leg_spin">Leg Spin</option>
+              <option value="left_arm_orthodox">Left-Arm Orthodox</option>
+              <option value="mystery_spin">Mystery Spin</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Batting Hand</label>
+            <select id="battingStyleSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Batting Hands</option>
+              <option value="right_hand_bat">Right Hand</option>
+              <option value="left_hand_bat">Left Hand</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Sort By</label>
+            <select id="sortSelect" onchange="applyPlayerFilters()">
+              <option value="overall">Highest Overall Rating</option>
+              <option value="runs">Most Career Runs</option>
+              <option value="wickets">Most Career Wickets</option>
+              <option value="centuries">Most Centuries</option>
+              <option value="fifties">Most Fifties</option>
+              <option value="batting">Batting Rating</option>
+              <option value="bowling">Bowling Rating</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap reset-filter-btn-wrap">
+            <button class="reset-filter-btn" onclick="resetPlayerFilters()">Reset Filters</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player Cards Grid -->
+      <div id="playersGrid" class="players-grid">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading player profiles...</p>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div id="playersPagination" class="pagination-bar"></div>
+    </section>
+
+    <!-- TAB 4: PLAYER COMPARISON (HEAD TO HEAD) -->
+    <section id="tab-compare" class="tab-section hidden">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Head-to-Head Player Comparison</h1>
+          <p class="section-subtitle">Compare any two players side-by-side across ratings, career numbers, formats, and specialized traits</p>
+        </div>
+      </div>
+
+      <!-- Compare Selector Toolbar -->
+      <div class="compare-selector-card">
+        <div class="compare-inputs-grid">
+          <div class="compare-input-col">
+            <label class="compare-col-label">Player 1</label>
+            <div class="compare-search-input-wrap">
+              <input type="text" id="compareP1Input" placeholder="Enter name or ID (e.g. Matthew Botha)" autocomplete="off">
+              <div id="compareP1Dropdown" class="autocomplete-dropdown hidden"></div>
+            </div>
+          </div>
+
+          <div class="compare-vs-divider">
+            <span class="vs-circle">VS</span>
+          </div>
+
+          <div class="compare-input-col">
+            <label class="compare-col-label">Player 2</label>
+            <div class="compare-search-input-wrap">
+              <input type="text" id="compareP2Input" placeholder="Enter name or ID (e.g. Tanay Jain, Qais Farahi)" autocomplete="off">
+              <div id="compareP2Dropdown" class="autocomplete-dropdown hidden"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="compare-actions-bar">
+          <div class="compare-format-pills">
+            <span class="format-filter-lbl">Format:</span>
+            <button class="format-pill active" data-format="all" onclick="setCompareFormat('all')">All Formats</button>
+            <button class="format-pill" data-format="short" onclick="setCompareFormat('short')">Short (T20/T10)</button>
+            <button class="format-pill" data-format="odi" onclick="setCompareFormat('odi')">ODI (50-Over)</button>
+            <button class="format-pill" data-format="test" onclick="setCompareFormat('test')">Test Matches</button>
+          </div>
+
+          <div class="compare-quick-picks">
+            <span class="quick-pick-lbl">Quick Matchups:</span>
+            <button class="quick-pick-btn" onclick="quickCompare('Matthew Botha', 'Tanay Jain')">Botha vs Jain</button>
+            <button class="quick-pick-btn" onclick="quickCompare('Qais Farahi', 'Matthew Botha')">Farahi vs Botha</button>
+            <button class="quick-pick-btn" onclick="quickCompare('Kabir Kohli', 'Liam Vance')">Kohli vs Vance</button>
+          </div>
+
+          <button class="compare-run-btn" onclick="runPlayerComparison()">
+            <span>⚔️ Compare Players</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Compare Results Container -->
+      <div id="compareResultsContainer" class="compare-results-area">
+        <div class="compare-placeholder-card">
+          <div class="placeholder-icon">⚔️</div>
+          <div class="placeholder-title">Select Two Players to Compare</div>
+          <div class="placeholder-desc">Type names above or click one of the quick matchups to analyze side-by-side batting, bowling, ratings, traits, and advantages.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RANKINGS & LEADERBOARDS -->
+    <section id="tab-rankings" class="tab-section hidden">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Official Rankings & Leaderboards</h1>
+          <p class="section-subtitle">Official ICC International, Domestic Leagues & Overall Universe Rankings</p>
+        </div>
+      </div>
+
+      <!-- Scope Switcher (International / Domestic / Overall) -->
+      <div class="rankings-scope-bar">
+        <div class="scope-tabs-group">
+          <button class="scope-tab-btn active" data-scope="international" onclick="setRankingsScope('international')">
+            <span class="scope-icon">🌍</span> International Rankings
+          </button>
+          <button class="scope-tab-btn" data-scope="domestic" onclick="setRankingsScope('domestic')">
+            <span class="scope-icon">🏛️</span> Domestic Leagues
+          </button>
+          <button class="scope-tab-btn" data-scope="overall" onclick="setRankingsScope('overall')">
+            <span class="scope-icon">🌐</span> Overall Universe
+          </button>
+        </div>
+
+        <!-- Dynamic Format Selector for Rankings -->
+        <div id="rankingsFormatPills" class="format-pills-bar">
+          <!-- Rendered dynamically depending on scope -->
+        </div>
+      </div>
+
+      <!-- Caps Leaderboard Showcase -->
+      <div class="caps-container">
+        <div class="cap-card orange-cap">
+          <div class="cap-header">
+            <span class="cap-badge">🟠 ORANGE CAP</span>
+            <span class="cap-metric">Leading Run Scorers</span>
+          </div>
+          <div id="orangeCapList" class="cap-leaders-list">Loading...</div>
+        </div>
+
+        <div class="cap-card purple-cap">
+          <div class="cap-header">
+            <span class="cap-badge">🟣 PURPLE CAP</span>
+            <span class="cap-metric">Leading Wicket Takers</span>
+          </div>
+          <div id="purpleCapList" class="cap-leaders-list">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Official Rankings Category Subtabs -->
+      <div class="rankings-subtabs">
+        <button class="subtab-btn active" data-cat="batting" onclick="switchRankingCategory('batting')">🏏 Batting Rankings</button>
+        <button class="subtab-btn" data-cat="bowling" onclick="switchRankingCategory('bowling')">🎯 Bowling Rankings</button>
+        <button class="subtab-btn" data-cat="all_rounders" onclick="switchRankingCategory('all_rounders')">⚡ All-Rounder Rankings</button>
+        <button class="subtab-btn" id="teamsRankingSubtab" data-cat="teams" onclick="switchRankingCategory('teams')">🏆 Team Rankings</button>
+      </div>
+
+      <div class="rankings-table-wrap">
+        <table class="rankings-table">
+          <thead>
+            <tr>
+              <th style="width: 70px;">Rank</th>
+              <th>Player / Team</th>
+              <th>Nation / Affiliation</th>
+              <th style="text-align: right;">Rating Points</th>
+              <th style="text-align: right;">Key Statistics</th>
+            </tr>
+          </thead>
+          <tbody id="rankingsTableBody">
+            <tr>
+              <td colspan="5" class="loading-cell">Loading official rankings...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 6: TOURNAMENTS & STANDINGS -->
+    <section id="tab-tournaments" class="tab-section hidden">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">Tournaments & Standings</h1>
+          <p class="section-subtitle">Select any tournament to explore points tables, player statistics, and participating teams</p>
+        </div>
+      </div>
+
+      <!-- Tournament Category Filter & Selector -->
+      <div class="tourney-picker-panel">
+        <div class="tourney-cat-filters">
+          <button class="cat-pill active" onclick="filterTournamentList('all')">All Tournaments</button>
+          <button class="cat-pill" onclick="filterTournamentList('international')">🌍 International</button>
+          <button class="cat-pill" onclick="filterTournamentList('t20_leagues')">⚡ T20 Leagues</button>
+          <button class="cat-pill" onclick="filterTournamentList('list_a')">🏏 List-A</button>
+          <button class="cat-pill" onclick="filterTournamentList('first_class')">🏛️ First-Class</button>
+        </div>
+
+        <div class="tourney-select-row">
+          <label class="tourney-select-label">Active Tournament:</label>
+          <div class="tourney-dropdown-wrap">
+            <select id="tournamentSelectBox" onchange="onTournamentSelectChange()">
+              <option value="">Loading tournaments...</option>
+            </select>
+          </div>
+          <span id="selectedTournamentMeta" class="selected-tourney-meta-badge"></span>
+        </div>
+      </div>
+
+      <!-- Active Tournament Main View -->
+      <div id="tournamentDetailView" class="tournament-detail-container">
+        <!-- Sub navigation within active tournament -->
+        <div class="tourney-subnav">
+          <button class="tourney-subnav-btn active" data-view="standings" onclick="switchTourneyView('standings')">
+            📊 Points Table & Standings
+          </button>
+          <button class="tourney-subnav-btn" data-view="leaders" onclick="switchTourneyView('leaders')">
+            🌟 Top Batters & Bowlers
+          </button>
+          <button class="tourney-subnav-btn" data-view="teams" onclick="switchTourneyView('teams')">
+            🛡️ Participating Teams
+          </button>
+          <button class="tourney-subnav-btn" data-view="matches" onclick="switchTourneyView('matches')">
+            📅 Match Fixtures
+          </button>
+        </div>
+
+        <!-- Dynamic views -->
+        <div id="tourneySubViewContainer" class="tourney-subview-content">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading tournament data...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile Bottom Navigation Dock -->
+  <div class="mobile-bottom-nav">
+    <button class="mob-nav-btn active" data-tab="live" onclick="switchTab('live')">
+      <span class="mob-icon">🔴</span>
+      <span class="mob-lbl">Live</span>
+    </button>
+    <button class="mob-nav-btn" data-tab="matches" onclick="switchTab('matches')">
+      <span class="mob-icon">📊</span>
+      <span class="mob-lbl">Matches</span>
+    </button>
+    <button class="mob-nav-btn" data-tab="players" onclick="switchTab('players')">
+      <span class="mob-icon">👥</span>
+      <span class="mob-lbl">Players</span>
+    </button>
+    <button class="mob-nav-btn" data-tab="compare" onclick="switchTab('compare')">
+      <span class="mob-icon">⚔️</span>
+      <span class="mob-lbl">Compare</span>
+    </button>
+    <button class="mob-nav-btn" data-tab="rankings" onclick="switchTab('rankings')">
+      <span class="mob-icon">🏆</span>
+      <span class="mob-lbl">Rankings</span>
+    </button>
+    <button class="mob-nav-btn" data-tab="tournaments" onclick="switchTab('tournaments')">
+      <span class="mob-icon">🏟️</span>
+      <span class="mob-lbl">Tourneys</span>
+    </button>
+  </div>
+
+  <!-- MODAL: Full Match Scorecard -->
+  <div id="scorecardModal" class="modal-backdrop hidden">
+    <div class="modal-box scorecard-modal">
+      <div class="modal-header">
+        <div id="scorecardModalTitle" class="modal-title">Match Scorecard</div>
+        <button class="modal-close" onclick="closeModal('scorecardModal')">&times;</button>
+      </div>
+      <div id="scorecardModalBody" class="modal-body">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Player Profile Dossier -->
+  <div id="playerModal" class="modal-backdrop hidden">
+    <div class="modal-box player-modal">
+      <div class="modal-header">
+        <div id="playerModalTitle" class="modal-title">Player Dossier</div>
+        <button class="modal-close" onclick="closeModal('playerModal')">&times;</button>
+      </div>
+      <div id="playerModalBody" class="modal-body">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner container">
+      <div class="footer-col">
+        <div class="brand-title">VIRTUAL CRICKET ESPORTS</div>
+        <p class="footer-desc">The ultimate automated Discord cricket simulation ecosystem. Live ball-by-ball engines, dynamic player progression, and competitive league management.</p>
+      </div>
+      <div class="footer-stats-col">
+        <div class="stat-ticker">
+          <span class="ticker-val" id="footTotalMatches">-</span>
+          <span class="ticker-lbl">Matches Simulated</span>
+        </div>
+        <div class="stat-ticker">
+          <span class="ticker-val" id="footTotalPlayers">-</span>
+          <span class="ticker-lbl">Active Players</span>
+        </div>
+        <div class="stat-ticker">
+          <span class="ticker-val" id="footTotalTeams">-</span>
+          <span class="ticker-lbl">Teams & Squads</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom container">
+      <span>Virtual Cricket Universe &copy; 2026. Built for high-performance esports live broadcasting.</span>
+      <span class="engine-badge">⚡ Real-Time Engine Active</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
