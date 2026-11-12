@@ -660,6 +660,59 @@ async function computeTournamentStandingsData(tourneyId) {
 }
 
 // -----------------------------------------------------------------------------
+// Discord Channel Name Cache & Resolver
+// -----------------------------------------------------------------------------
+const KNOWN_DISCORD_CHANNELS = {
+  "1511374928857792612": "🏟️│ironwood-cricket-ground",
+  "1511374988043747338": "🏟️│emerald-crest-stadium",
+  "1511375104154533898": "🏟️│silverleaf-oval",
+  "1511375274565042176": "🏟️│frostspire-stadium",
+  "1511373730323103784": "🏟️│thundercrest-stadium",
+  "1511374679145971824": "🏟️│nova-arena",
+  "1511375155111133306": "🏟️│phoenix-field",
+  "1511375317019656202": "🏟️│eclipse-oval",
+  "1511375380617891910": "🏟️│titans-arena",
+  "1511375435295100958": "🏟️│sunfire-cricket-ground",
+  "1511375531382407210": "🏟️│dragonstone-oval",
+  "1514689712969875456": "🎥│vcn-go",
+  "1518976395173302404": "🎥│cricketverse-tv",
+  "1518915787476303882": "📋│raw-stats-2",
+  "1521243051438375003": "📋│results-1",
+};
+
+const discordChannelNameCache = new Map(Object.entries(KNOWN_DISCORD_CHANNELS));
+
+async function resolveDiscordChannelName(channelId) {
+  if (!channelId) return "#match-arena";
+  const idStr = String(channelId).trim();
+  if (discordChannelNameCache.has(idStr)) {
+    return discordChannelNameCache.get(idStr);
+  }
+
+  const token = process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN;
+  if (token) {
+    try {
+      const cleanToken = token.replace(/^['"]|['"]$/g, "").trim();
+      const res = await fetch(`https://discord.com/api/v10/channels/${idStr}`, {
+        headers: { Authorization: `Bot ${cleanToken}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.name) {
+          const formatted = data.name.startsWith("🏟️") || data.name.startsWith("🎥") || data.name.startsWith("📋")
+            ? data.name
+            : `#${data.name}`;
+          discordChannelNameCache.set(idStr, formatted);
+          return formatted;
+        }
+      }
+    } catch {}
+  }
+
+  return `#channel-${idStr.slice(-4)}`;
+}
+
+// -----------------------------------------------------------------------------
 // 1. Live Streaming Matches (/api/live)
 // -----------------------------------------------------------------------------
 app.get("/api/live", async (req, res) => {
@@ -674,15 +727,18 @@ app.get("/api/live", async (req, res) => {
         if (!ms || !ms.matchId || ms.isComplete) continue;
 
         const inn = ms.currentInningsState || (ms.innings && ms.innings[ms.currentInnings || 0]);
-        const battingTeamName = inn?.teamName || ms.teamAName || ms.teamA?.team?.name || "Batting Team";
-        const bowlingTeamName = (battingTeamName === (ms.teamAName || ms.teamA?.team?.name) ? (ms.teamBName || ms.teamB?.team?.name) : (ms.teamAName || ms.teamA?.team?.name)) || "Bowling Team";
+        const teamAName = ms.teamAName || ms.teamA?.team?.name || "Team A";
+        const teamBName = ms.teamBName || ms.teamB?.team?.name || "Team B";
+
+        const battingTeamName = inn?.teamName || (ms.battingTeamSide === "B" ? teamBName : teamAName);
+        const bowlingTeamName = battingTeamName === teamAName ? teamBName : teamAName;
 
         const striker = inn?.batters?.[inn.strikerIndex];
         const nonStriker = inn?.batters?.[inn.nonStrikerIndex];
         const bowler = inn?.currentBowler;
-        const totalRuns = inn?.totalRuns ?? 0;
-        const totalBalls = inn?.totalBalls ?? 0;
-        const totalWickets = inn?.totalWickets ?? 0;
+        const totalRuns = Number(inn?.totalRuns ?? 0);
+        const totalBalls = Number(inn?.totalBalls ?? 0);
+        const totalWickets = Number(inn?.totalWickets ?? 0);
         const totalOversMax = ms.totalOvers || 20;
 
         const crr = totalBalls > 0 ? ((totalRuns / totalBalls) * 6).toFixed(2) : "0.00";
@@ -693,21 +749,111 @@ app.get("/api/live", async (req, res) => {
           rrr = ballsRemaining > 0 ? ((runsNeeded / ballsRemaining) * 6).toFixed(2) : "0.00";
         }
 
+        // Determine scores & overs for both Team A and Team B
+        const inns = Array.isArray(ms.innings) ? ms.innings : [];
+        const inn0 = inns[0];
+        const currentInningsIdx = Number(ms.currentInnings || 0);
+
+        // Identify who batted first in innings 0
+        let isTeamABattedFirst = true;
+        if (inn0?.teamName) {
+          const inn0Name = inn0.teamName.toLowerCase().trim();
+          if (inn0Name === teamBName.toLowerCase().trim()) {
+            isTeamABattedFirst = false;
+          }
+        } else if (ms.battingTeamSide === "B" && currentInningsIdx === 0) {
+          isTeamABattedFirst = false;
+        }
+
+        let teamAScore = "";
+        let teamAOvers = "";
+        let teamAIsBatting = false;
+        let teamAYetToBat = false;
+
+        let teamBScore = "";
+        let teamBOvers = "";
+        let teamBIsBatting = false;
+        let teamBYetToBat = false;
+
+        if (currentInningsIdx === 0) {
+          // In Innings 1:
+          if (isTeamABattedFirst) {
+            teamAIsBatting = true;
+            teamAScore = `${totalRuns}/${totalWickets}`;
+            teamAOvers = formatCricketOvers(null, totalBalls);
+
+            teamBYetToBat = true;
+            teamBScore = "Yet to bat";
+            teamBOvers = "";
+          } else {
+            teamBIsBatting = true;
+            teamBScore = `${totalRuns}/${totalWickets}`;
+            teamBOvers = formatCricketOvers(null, totalBalls);
+
+            teamAYetToBat = true;
+            teamAScore = "Yet to bat";
+            teamAOvers = "";
+          }
+        } else {
+          // In Innings 2:
+          if (isTeamABattedFirst) {
+            // Team A finished batting in Innings 1
+            teamAIsBatting = false;
+            teamAYetToBat = false;
+            const r0 = inn0?.totalRuns ?? (ms.target ? ms.target - 1 : 0);
+            const w0 = inn0?.totalWickets ?? 0;
+            const b0 = inn0?.totalBalls ?? 0;
+            teamAScore = `${r0}/${w0}`;
+            teamAOvers = `${formatCricketOvers(null, b0)} ov`;
+
+            // Team B is currently batting in Innings 2
+            teamBIsBatting = true;
+            teamBYetToBat = false;
+            teamBScore = `${totalRuns}/${totalWickets}`;
+            teamBOvers = formatCricketOvers(null, totalBalls);
+          } else {
+            // Team B finished batting in Innings 1
+            teamBIsBatting = false;
+            teamBYetToBat = false;
+            const r0 = inn0?.totalRuns ?? (ms.target ? ms.target - 1 : 0);
+            const w0 = inn0?.totalWickets ?? 0;
+            const b0 = inn0?.totalBalls ?? 0;
+            teamBScore = `${r0}/${w0}`;
+            teamBOvers = `${formatCricketOvers(null, b0)} ov`;
+
+            // Team A is currently batting in Innings 2
+            teamAIsBatting = true;
+            teamAYetToBat = false;
+            teamAScore = `${totalRuns}/${totalWickets}`;
+            teamAOvers = formatCricketOvers(null, totalBalls);
+          }
+        }
+
+        const channelName = await resolveDiscordChannelName(ms.channelId);
+
         liveMatches.push({
           matchId: ms.matchId,
           format: (ms.format || "cricket").toUpperCase().replace(/_/g, " "),
           pitchType: (ms.pitchType || "balanced").replace(/_/g, " "),
-          stadiumName: ms.stadiumName || "Virtual Cricket Arena",
+          stadiumName: ms.stadiumName || "Official Cricket Ground",
           weather: ms.weather || "clear",
           teamA: {
-            name: ms.teamAName || ms.teamA?.team?.name || "Team A",
-            shortName: ms.teamA?.team?.shortName || "TMA",
+            name: teamAName,
+            shortName: ms.teamA?.team?.shortName || teamAName.slice(0, 3).toUpperCase(),
             logoUrl: ms.teamA?.team?.logoUrl || null,
+            score: teamAScore,
+            overs: teamAOvers,
+            isBatting: teamAIsBatting,
+            yetToBat: teamAYetToBat,
           },
           teamB: {
-            name: ms.teamBName || ms.teamB?.team?.name || "Team B",
-            shortName: ms.teamB?.team?.shortName || "TMB",
+            name: teamBName,
+            shortName: ms.teamB?.team?.shortName || teamBName.slice(0, 3).toUpperCase(),
             logoUrl: ms.teamB?.team?.logoUrl || null,
+            score: teamBScore,
+            overs: teamBOvers,
+            isBatting: teamBIsBatting,
+            yetToBat: teamBYetToBat,
           },
           battingTeamName,
           bowlingTeamName,
@@ -751,7 +897,7 @@ app.get("/api/live", async (req, res) => {
           })),
           discord: {
             channelId: ms.channelId,
-            channelName: "Virtual Cricket Arena",
+            channelName,
             channelUrl: `https://discord.com/channels/@me/${ms.channelId}`,
             guildName: "Virtual Universe",
           },
@@ -791,28 +937,31 @@ app.get("/api/matches/recent", async (req, res) => {
     sqlQuery += ` ORDER BY id DESC LIMIT ${limit}`;
 
     const { rows } = await query(sqlQuery, params);
-    const formatted = rows.map((m) => ({
-      id: m.id,
-      teamAName: m.team_a_name,
-      teamBName: m.team_b_name,
-      teamAScore: m.team_a_score,
-      teamAWickets: m.team_a_wickets,
-      teamAOvers: formatCricketOvers(m.team_a_overs),
-      teamBScore: m.team_b_score,
-      teamBWickets: m.team_b_wickets,
-      teamBOvers: formatCricketOvers(m.team_b_overs),
-      format: (m.format || "").toUpperCase().replace(/_/g, " "),
-      pitchType: (m.pitch_type || "").replace(/_/g, " "),
-      stadiumName: m.stadium_name || "Virtual Cricket Arena",
-      winnerTeamName: m.winner_team_name,
-      resultDescription: m.result_description,
-      playerOfMatchName: m.player_of_match_name,
-      channel: {
-        id: m.channel_id,
-        name: "Virtual Arena",
-        url: `https://discord.com/channels/@me/${m.channel_id}`,
-      },
-      completedAt: m.completed_at,
+    const formatted = await Promise.all(rows.map(async (m) => {
+      const channelName = await resolveDiscordChannelName(m.channel_id);
+      return {
+        id: m.id,
+        teamAName: m.team_a_name,
+        teamBName: m.team_b_name,
+        teamAScore: m.team_a_score,
+        teamAWickets: m.team_a_wickets,
+        teamAOvers: formatCricketOvers(m.team_a_overs),
+        teamBScore: m.team_b_score,
+        teamBWickets: m.team_b_wickets,
+        teamBOvers: formatCricketOvers(m.team_b_overs),
+        format: (m.format || "").toUpperCase().replace(/_/g, " "),
+        pitchType: (m.pitch_type || "").replace(/_/g, " "),
+        stadiumName: m.stadium_name || "Official Cricket Ground",
+        winnerTeamName: m.winner_team_name,
+        resultDescription: m.result_description,
+        playerOfMatchName: m.player_of_match_name,
+        channel: {
+          id: m.channel_id,
+          name: channelName,
+          url: `https://discord.com/channels/@me/${m.channel_id}`,
+        },
+        completedAt: m.completed_at,
+      };
     }));
 
     res.json({ success: true, count: formatted.length, matches: formatted });
@@ -837,18 +986,50 @@ app.get("/api/matches/:id", async (req, res) => {
     const innRes = await query("SELECT * FROM match_innings WHERE match_id = $1 ORDER BY innings_number ASC", [matchId]);
 
     const formattedInnings = innRes.rows.map((inn) => {
-      const bowlingCard = (inn.bowling_card || []).map((w) => ({
-        ...w,
-        overs: formatCricketOvers(w.overs, w.balls),
+      const batCard = (inn.batting_card || []).map((b) => ({
+        ...b,
+        name: b.name || b.playerName || "Batter",
+        runs: Number(b.runs ?? 0),
+        balls: Number(b.balls ?? 0),
+        fours: Number(b.fours ?? 0),
+        sixes: Number(b.sixes ?? 0),
+        dismissal: b.dismissal || (b.isOut === false ? "not out" : "out"),
+        strikeRate: b.strikeRate != null ? b.strikeRate : (b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(2) : "0.00"),
       }));
+
+      const bowlCard = (inn.bowling_card || []).map((w) => ({
+        ...w,
+        name: w.name || w.bowlerName || "Bowler",
+        overs: formatCricketOvers(w.overs, w.balls),
+        maidens: Number(w.maidens ?? 0),
+        runs: Number(w.runs ?? w.runsConceded ?? 0),
+        wickets: Number(w.wickets ?? 0),
+        economy: w.economy != null ? w.economy : (w.overs > 0 ? (w.runs / w.overs).toFixed(2) : "0.00"),
+      }));
+
+      const battingTeamName = inn.batting_team_id === match.team_a_id
+        ? (match.team_a_name || "Team A")
+        : inn.batting_team_id === match.team_b_id
+        ? (match.team_b_name || "Team B")
+        : (inn.batting_team_name || (inn.innings_number === 1 ? match.team_a_name : match.team_b_name) || `Innings ${inn.innings_number}`);
+
       return {
         ...inn,
+        inningsNumber: inn.innings_number,
+        teamName: battingTeamName,
+        battingTeamName,
+        totalRuns: Number(inn.total_runs ?? 0),
+        totalWickets: Number(inn.total_wickets ?? 0),
+        totalBalls: Number(inn.total_balls ?? 0),
         overs: formatCricketOvers(null, inn.total_balls),
-        bowlingCard,
+        battingCard: batCard,
+        bowlingCard: bowlCard,
       };
     });
 
     const deliveriesRes = await query("SELECT * FROM match_deliveries WHERE match_id = $1 ORDER BY id DESC LIMIT 30", [matchId]);
+
+    const channelName = await resolveDiscordChannelName(match.channel_id);
 
     res.json({
       success: true,
@@ -856,7 +1037,7 @@ app.get("/api/matches/:id", async (req, res) => {
         ...match,
         teamAOvers: formatCricketOvers(match.team_a_overs),
         teamBOvers: formatCricketOvers(match.team_b_overs),
-        channelName: "Virtual Arena",
+        channelName,
         channelUrl: `https://discord.com/channels/@me/${match.channel_id}`,
       },
       innings: formattedInnings,

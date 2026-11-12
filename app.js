@@ -481,11 +481,14 @@ function renderLiveStreams(matches) {
             <div class="team-shield">${m.teamA.shortName || m.teamA.name.slice(0, 3)}</div>
             <div class="team-info-box">
               <span class="team-name">${m.teamA.name}</span>
-              ${m.battingTeamName === m.teamA.name ? `
-                <span class="team-score-live">${m.score}</span>
-                <span class="team-overs-live">(${formattedTeamOvers} / ${m.totalOversMax} ov)</span>
+              ${m.teamA.isBatting || (m.battingTeamName === m.teamA.name && !m.teamA.yetToBat) ? `
+                <span class="team-score-live">${m.teamA.score || m.score} <span class="live-dot" title="Batting Now"></span></span>
+                <span class="team-overs-live">(${m.teamA.overs || formattedTeamOvers} / ${m.totalOversMax} ov)</span>
+              ` : m.teamA.yetToBat || (m.currentInnings <= 1 && m.battingTeamName !== m.teamA.name && !m.teamA.score) ? `
+                <span class="team-score-live yet-to-bat-badge">Yet to bat</span>
               ` : `
-                <span class="team-score-live" style="opacity: 0.85;">Completed / Field</span>
+                <span class="team-score-live completed-score">${m.teamA.score || m.score}</span>
+                <span class="team-overs-live">${(m.teamA.overs || "").startsWith("(") ? m.teamA.overs : `(${m.teamA.overs || ""})`}</span>
               `}
             </div>
           </div>
@@ -499,11 +502,14 @@ function renderLiveStreams(matches) {
             <div class="team-shield">${m.teamB.shortName || m.teamB.name.slice(0, 3)}</div>
             <div class="team-info-box">
               <span class="team-name">${m.teamB.name}</span>
-              ${m.battingTeamName === m.teamB.name ? `
-                <span class="team-score-live">${m.score}</span>
-                <span class="team-overs-live">(${formattedTeamOvers} / ${m.totalOversMax} ov)</span>
+              ${m.teamB.isBatting || (m.battingTeamName === m.teamB.name && !m.teamB.yetToBat) ? `
+                <span class="team-score-live">${m.teamB.score || m.score} <span class="live-dot" title="Batting Now"></span></span>
+                <span class="team-overs-live">(${m.teamB.overs || formattedTeamOvers} / ${m.totalOversMax} ov)</span>
+              ` : m.teamB.yetToBat || (m.currentInnings <= 1 && m.battingTeamName !== m.teamB.name && !m.teamB.score) ? `
+                <span class="team-score-live yet-to-bat-badge">Yet to bat</span>
               ` : `
-                <span class="team-score-live" style="opacity: 0.85;">Completed / Field</span>
+                <span class="team-score-live completed-score">${m.teamB.score || m.score}</span>
+                <span class="team-overs-live">${(m.teamB.overs || "").startsWith("(") ? m.teamB.overs : `(${m.teamB.overs || ""})`}</span>
               `}
             </div>
           </div>
@@ -633,26 +639,41 @@ async function openScorecardModal(matchId) {
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
-    const m = data.match;
+    const m = data.match || {};
     const inns = data.innings || [];
 
-    modalTitle.textContent = `${m.teamAName} vs ${m.teamBName} (${(m.format || "").toUpperCase()})`;
+    const tAName = m.teamAName || m.team_a_name || "Team A";
+    const tBName = m.teamBName || m.team_b_name || "Team B";
+    modalTitle.textContent = `${tAName} vs ${tBName} (${(m.format || "").toUpperCase()})`;
+
+    const stadiumDisplay = m.stadiumName || m.stadium_name || "Official Cricket Ground";
+    const channelDisplay = m.channelName || m.channel?.name || "#match-stream";
 
     let html = `
-      <div style="background: rgba(0,0,0,0.25); padding: 16px; border-radius: var(--radius-md); border-left: 3px solid var(--accent-gold); margin-bottom: 16px;">
-        <div style="font-size: 16px; font-weight: 700; color: #fff;">${m.resultDescription || "Match Completed"}</div>
-        <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Venue: ${m.stadiumName || "Virtual Arena"} | Channel: ${m.channelName || "#channel"}</div>
+      <div style="background: rgba(0,0,0,0.35); padding: 16px; border-radius: var(--radius-md); border-left: 3px solid var(--accent-gold); margin-bottom: 20px;">
+        <div style="font-size: 16px; font-weight: 700; color: #fff;">${m.resultDescription || m.result_description || "Match Completed"}</div>
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+          <span>🏟️ Venue: <strong style="color: #fff;">${stadiumDisplay}</strong></span>
+          <span>📺 Channel: <strong style="color: var(--accent-gold);">${channelDisplay}</strong></span>
+        </div>
       </div>
     `;
 
     for (const inn of inns) {
-      const batCard = inn.battingCard || [];
-      const bowlCard = inn.bowlingCard || [];
-      const totalOvers = formatCricketOvers(null, inn.totalBalls);
+      const batCard = inn.battingCard || inn.batting_card || [];
+      const bowlCard = inn.bowlingCard || inn.bowling_card || [];
+      const innNumber = inn.inningsNumber ?? inn.innings_number ?? 1;
+      const teamTitle = inn.battingTeamName || inn.teamName || (innNumber === 1 ? tAName : tBName) || `Innings ${innNumber}`;
+      const runs = inn.totalRuns ?? inn.total_runs ?? 0;
+      const wkts = inn.totalWickets ?? inn.total_wickets ?? 0;
+      const balls = inn.totalBalls ?? inn.total_balls ?? 0;
+      const totalOvers = inn.overs || formatCricketOvers(null, balls);
 
       html += `
-        <div style="margin-top: 20px;">
-          <div class="innings-section-title">Innings ${inn.inningsNumber}: ${inn.totalRuns}/${inn.totalWickets} (${totalOvers} ov)</div>
+        <div style="margin-top: 24px;">
+          <div class="innings-section-title">
+            Innings ${innNumber}: ${teamTitle} — ${runs}/${wkts} (${totalOvers} ov)
+          </div>
           
           <table class="card-table">
             <thead>
@@ -667,21 +688,23 @@ async function openScorecardModal(matchId) {
               </tr>
             </thead>
             <tbody>
-              ${batCard.map((b) => `
+              ${batCard.length > 0 ? batCard.map((b) => `
                 <tr>
-                  <td style="font-weight: 600; color: #fff;">${b.name}</td>
+                  <td style="font-weight: 600; color: #fff;">${b.name || b.playerName || "Batter"}</td>
                   <td style="color: var(--text-muted); font-size: 12px;">${b.dismissal || "not out"}</td>
-                  <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${b.runs}</td>
-                  <td style="text-align: right; color: var(--text-muted);">${b.balls}</td>
-                  <td style="text-align: right;">${b.fours}</td>
-                  <td style="text-align: right;">${b.sixes}</td>
-                  <td style="text-align: right; font-family: var(--font-mono);">${b.strikeRate}</td>
+                  <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${b.runs ?? 0}</td>
+                  <td style="text-align: right; color: var(--text-muted);">${b.balls ?? 0}</td>
+                  <td style="text-align: right;">${b.fours ?? 0}</td>
+                  <td style="text-align: right;">${b.sixes ?? 0}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">${b.strikeRate ?? (b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(1) : "0.0")}</td>
                 </tr>
-              `).join("")}
+              `).join("") : `
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 12px;">Batting records not recorded</td></tr>
+              `}
             </tbody>
           </table>
 
-          <table class="card-table">
+          <table class="card-table" style="margin-top: 14px;">
             <thead>
               <tr>
                 <th>Bowler</th>
@@ -693,16 +716,18 @@ async function openScorecardModal(matchId) {
               </tr>
             </thead>
             <tbody>
-              ${bowlCard.map((w) => `
+              ${bowlCard.length > 0 ? bowlCard.map((w) => `
                 <tr>
-                  <td style="font-weight: 600; color: #fff;">${w.name}</td>
+                  <td style="font-weight: 600; color: #fff;">${w.name || w.bowlerName || "Bowler"}</td>
                   <td style="text-align: right;">${formatCricketOvers(w.overs, w.balls)}</td>
-                  <td style="text-align: right; color: var(--text-muted);">${w.maidens}</td>
-                  <td style="text-align: right;">${w.runs}</td>
-                  <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${w.wickets}</td>
-                  <td style="text-align: right; font-family: var(--font-mono);">${w.economy}</td>
+                  <td style="text-align: right; color: var(--text-muted);">${w.maidens ?? 0}</td>
+                  <td style="text-align: right;">${w.runs ?? w.runsConceded ?? 0}</td>
+                  <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${w.wickets ?? 0}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">${w.economy ?? (w.overs > 0 ? (w.runs / w.overs).toFixed(2) : "0.00")}</td>
                 </tr>
-              `).join("")}
+              `).join("") : `
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Bowling records not recorded</td></tr>
+              `}
             </tbody>
           </table>
         </div>
