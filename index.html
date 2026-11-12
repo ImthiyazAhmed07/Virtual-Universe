@@ -348,7 +348,10 @@
 
         <!-- Dynamic Format Selector for Rankings -->
         <div id="rankingsFormatPills" class="format-pills-bar">
-          <!-- Rendered dynamically depending on scope -->
+          <span class="format-filter-lbl">Format:</span>
+          <button class="format-pill-btn active" onclick="setRankingsFormat('odi')">ODI (50-Over)</button>
+          <button class="format-pill-btn" onclick="setRankingsFormat('t20')">T20 International</button>
+          <button class="format-pill-btn" onclick="setRankingsFormat('test')">Test Championship</button>
         </div>
       </div>
 
@@ -541,15 +544,15 @@
       </div>
       <div class="footer-stats-col">
         <div class="stat-ticker">
-          <span class="ticker-val" id="footTotalMatches">-</span>
+          <span class="ticker-val" id="footTotalMatches">3,400+</span>
           <span class="ticker-lbl">Matches Simulated</span>
         </div>
         <div class="stat-ticker">
-          <span class="ticker-val" id="footTotalPlayers">-</span>
+          <span class="ticker-val" id="footTotalPlayers">1,300+</span>
           <span class="ticker-lbl">Active Players</span>
         </div>
         <div class="stat-ticker">
-          <span class="ticker-val" id="footTotalTeams">-</span>
+          <span class="ticker-val" id="footTotalTeams">160+</span>
           <span class="ticker-lbl">Teams & Squads</span>
         </div>
       </div>

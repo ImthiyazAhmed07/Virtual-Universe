@@ -189,6 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initAutoRefresh();
   initPlayerSearchDebounce();
   initCompareAutocomplete();
+  renderFormatPills(state.rankingsScope);
 
   // Initial Data Load
   loadLiveStreams();
@@ -247,6 +248,7 @@ function switchTab(tabId) {
       runPlayerComparison();
     }
   } else if (tabId === "rankings") {
+    renderFormatPills(state.rankingsScope);
     loadRankings();
   } else if (tabId === "tournaments") {
     loadTournaments();
@@ -1168,38 +1170,37 @@ function renderComparisonCard(data) {
 // -----------------------------------------------------------------------------
 // TAB 5: Rankings & Leaderboards (International / Domestic / Overall)
 // -----------------------------------------------------------------------------
-function setRankingsScope(scope) {
-  state.rankingsScope = scope;
-  document.querySelectorAll(".scope-tab-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.scope === scope);
-  });
-
-  // Render Format Pills based on scope
+function renderFormatPills(scope = state.rankingsScope) {
   const pillsContainer = document.getElementById("rankingsFormatPills");
+  if (!pillsContainer) return;
   const teamsSubtab = document.getElementById("teamsRankingSubtab");
 
   if (scope === "international") {
-    teamsSubtab.style.display = "inline-flex";
-    state.rankingsFormat = "odi";
+    if (teamsSubtab) teamsSubtab.style.display = "inline-flex";
+    if (!["odi", "t20", "test"].includes(state.rankingsFormat)) {
+      state.rankingsFormat = "odi";
+    }
     pillsContainer.innerHTML = `
       <span class="format-filter-lbl">Format:</span>
-      <button class="format-pill-btn active" onclick="setRankingsFormat('odi')">ODI (50-Over)</button>
-      <button class="format-pill-btn" onclick="setRankingsFormat('t20')">T20 International</button>
-      <button class="format-pill-btn" onclick="setRankingsFormat('test')">Test Championship</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 'odi' ? 'active' : ''}" onclick="setRankingsFormat('odi')">ODI (50-Over)</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 't20' ? 'active' : ''}" onclick="setRankingsFormat('t20')">T20 International</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 'test' ? 'active' : ''}" onclick="setRankingsFormat('test')">Test Championship</button>
     `;
   } else if (scope === "domestic") {
-    teamsSubtab.style.display = "none";
+    if (teamsSubtab) teamsSubtab.style.display = "none";
     if (state.activeRankingCategory === "teams") state.activeRankingCategory = "batting";
-    state.rankingsFormat = "t20";
+    if (!["t20", "list_a", "first_class"].includes(state.rankingsFormat)) {
+      state.rankingsFormat = "t20";
+    }
     pillsContainer.innerHTML = `
       <span class="format-filter-lbl">Format:</span>
-      <button class="format-pill-btn active" onclick="setRankingsFormat('t20')">⚡ T20 Leagues</button>
-      <button class="format-pill-btn" onclick="setRankingsFormat('list_a')">🏏 List-A</button>
-      <button class="format-pill-btn" onclick="setRankingsFormat('first_class')">🏛️ First-Class</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 't20' ? 'active' : ''}" onclick="setRankingsFormat('t20')">⚡ T20 Leagues</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 'list_a' ? 'active' : ''}" onclick="setRankingsFormat('list_a')">🏏 List-A</button>
+      <button class="format-pill-btn ${state.rankingsFormat === 'first_class' ? 'active' : ''}" onclick="setRankingsFormat('first_class')">🏛️ First-Class</button>
     `;
   } else {
     // Overall
-    teamsSubtab.style.display = "none";
+    if (teamsSubtab) teamsSubtab.style.display = "none";
     if (state.activeRankingCategory === "teams") state.activeRankingCategory = "batting";
     state.rankingsFormat = "all";
     pillsContainer.innerHTML = `
@@ -1207,19 +1208,34 @@ function setRankingsScope(scope) {
       <button class="format-pill-btn active" style="cursor: default;">🌐 All Formats Combined</button>
     `;
   }
+}
 
+function setRankingsScope(scope) {
+  state.rankingsScope = scope;
+  document.querySelectorAll(".scope-tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.scope === scope);
+  });
+
+  if (scope === "international") {
+    state.rankingsFormat = "odi";
+  } else if (scope === "domestic") {
+    state.rankingsFormat = "t20";
+  } else {
+    state.rankingsFormat = "all";
+  }
+
+  renderFormatPills(scope);
   loadRankings();
 }
 
 function setRankingsFormat(fmt) {
   state.rankingsFormat = fmt;
-  document.querySelectorAll(".format-pill-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.getAttribute("onclick")?.includes(`'${fmt}'`));
-  });
+  renderFormatPills(state.rankingsScope);
   loadRankings();
 }
 
 async function loadRankings() {
+  renderFormatPills(state.rankingsScope);
   const tbody = document.getElementById("rankingsTableBody");
   tbody.innerHTML = `<tr><td colspan="10" class="loading-cell"><div class="spinner" style="margin: 12px auto;"></div>Fetching rankings snapshot & leaderboards...</td></tr>`;
 
@@ -2031,13 +2047,19 @@ async function openPlayerModal(playerId) {
 async function loadOverviewStats() {
   try {
     const res = await apiFetch("/api/overview");
+    if (!res.ok) return;
     const data = await res.json();
     if (data.success) {
-      document.getElementById("footTotalMatches").textContent = data.totalMatches.toLocaleString();
-      document.getElementById("footTotalPlayers").textContent = data.totalPlayers.toLocaleString();
-      document.getElementById("footTotalTeams").textContent = data.totalTeams.toLocaleString();
+      const matchEl = document.getElementById("footTotalMatches");
+      const playerEl = document.getElementById("footTotalPlayers");
+      const teamEl = document.getElementById("footTotalTeams");
+      if (matchEl && data.totalMatches != null) matchEl.textContent = data.totalMatches.toLocaleString();
+      if (playerEl && data.totalPlayers != null) playerEl.textContent = data.totalPlayers.toLocaleString();
+      if (teamEl && data.totalTeams != null) teamEl.textContent = data.totalTeams.toLocaleString();
     }
-  } catch {}
+  } catch (err) {
+    console.debug("Overview stats fetch:", err);
+  }
 }
 
 // Modal Closer

@@ -23,17 +23,18 @@ app.use(express.json());
 const dbUrl = process.env.DATABASE_URL || process.env.DATABASE_PRIVATE_URL;
 
 if (!dbUrl) {
-  console.warn("⚠️  DATABASE_URL environment variable is not defined. Using local fallback or mock.");
+  console.warn("⚠️  DATABASE_URL environment variable is not defined. Please configure DATABASE_URL in your hosting provider settings.");
 }
+
+const isSslDisabled = process.env.DATABASE_SSL === "false" ||
+  (dbUrl && (dbUrl.includes("localhost") || dbUrl.includes("sslmode=disable")));
 
 const pool = new pg.Pool({
   connectionString: dbUrl,
-  ssl: process.env.DATABASE_SSL === "false" || (dbUrl && dbUrl.includes("localhost"))
-    ? false
-    : { rejectUnauthorized: false },
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  ssl: isSslDisabled ? false : { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 15000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on("error", (err) => {
@@ -2049,26 +2050,43 @@ app.get("/api/tournaments/:id", async (req, res) => {
 // -----------------------------------------------------------------------------
 // 10. General Overview Stats (/api/overview)
 // -----------------------------------------------------------------------------
-app.get("/api/overview", async (req, res) => {
-  try {
-    const [pCount, mCount, tCount, trnCount, liveCount] = await Promise.all([
-      query("SELECT count(*) as count FROM players"),
-      query("SELECT count(*) as count FROM matches"),
-      query("SELECT count(*) as count FROM teams"),
-      query("SELECT count(*) as count FROM tournaments"),
-      query("SELECT count(*) as count FROM active_match_states").catch(() => ({ rows: [{ count: 0 }] })),
-    ]);
+let cachedOverview = null;
+let lastOverviewFetch = 0;
 
-    res.json({
+app.get("/api/overview", async (req, res) => {
+  const now = Date.now();
+  if (cachedOverview && now - lastOverviewFetch < 30000) {
+    return res.json(cachedOverview);
+  }
+
+  try {
+    const countsRes = await query(`
+      SELECT
+        (SELECT count(*) FROM matches) as total_matches,
+        (SELECT count(*) FROM players) as total_players,
+        (SELECT count(*) FROM teams) as total_teams,
+        (SELECT count(*) FROM tournaments) as total_tournaments
+    `);
+    const r = countsRes.rows[0] || {};
+    let liveCount = 0;
+    try {
+      const liveRes = await query("SELECT count(*) as count FROM active_match_states");
+      liveCount = Number(liveRes.rows[0]?.count || 0);
+    } catch {}
+
+    cachedOverview = {
       success: true,
-      liveMatchCount: Number(liveCount.rows[0]?.count || 0),
-      totalPlayers: Number(pCount.rows[0]?.count || 0),
-      totalMatches: Number(mCount.rows[0]?.count || 0),
-      totalTeams: Number(tCount.rows[0]?.count || 0),
-      totalTournaments: Number(trnCount.rows[0]?.count || 0),
-    });
+      liveMatchCount: liveCount,
+      totalPlayers: Number(r.total_players || 0),
+      totalMatches: Number(r.total_matches || 0),
+      totalTeams: Number(r.total_teams || 0),
+      totalTournaments: Number(r.total_tournaments || 0),
+    };
+    lastOverviewFetch = now;
+    res.json(cachedOverview);
   } catch (err) {
     console.error("Error in /api/overview:", err);
+    if (cachedOverview) return res.json(cachedOverview);
     res.status(500).json({ success: false, error: err.message || "Failed to load overview" });
   }
 });
