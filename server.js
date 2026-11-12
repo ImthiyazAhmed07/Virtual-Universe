@@ -1549,16 +1549,20 @@ app.get("*", (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
-// Start Server
+// Start Server (Only when not executed inside Vercel serverless environment)
 // -----------------------------------------------------------------------------
-const server = app.listen(port, () => {
-  console.log(`🚀 Virtual Universe Web Platform running on port ${port}`);
-  console.log(`🌐 http://localhost:${port}`);
-});
-
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, closing HTTP server and database pool...");
-  server.close(() => {
-    pool.end();
+if (!process.env.VERCEL) {
+  const server = app.listen(port, () => {
+    console.log(`🚀 Virtual Universe Web Platform running on port ${port}`);
+    console.log(`🌐 http://localhost:${port}`);
   });
-});
+
+  process.on("SIGTERM", () => {
+    console.log("SIGTERM received, closing HTTP server and database pool...");
+    server.close(() => {
+      pool.end();
+    });
+  });
+}
+
+export default app;

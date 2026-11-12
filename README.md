@@ -63,6 +63,15 @@ Visit `http://localhost:3000` in your browser.
 
 ## ☁️ Deployment Guide
 
+### Deploying to Vercel (Serverless Full-Stack)
+1. Go to [Vercel Dashboard](https://vercel.com/) and click **Add New** -> **Project**.
+2. Import your GitHub repository `ImthiyazAhmed07/Virtual-Universe`.
+3. In **Environment Variables**, add:
+   - **Key**: `DATABASE_URL`
+   - **Value**: Your PostgreSQL connection string (e.g. from Supabase, Neon, Render, or VPS).
+4. Click **Deploy**.
+5. Vercel automatically serves the static frontend from the edge CDN and executes all `/api/*` endpoints via the included serverless handler (`api/index.js` and `vercel.json`).
+
 ### Deploying to GitHub Pages (Static Frontend)
 1. Go to your repository **Settings** -> **Pages**.
 2. Under **Build and deployment** -> **Source**: select **"Deploy from a branch"**.
