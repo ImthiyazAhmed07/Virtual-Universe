@@ -2689,6 +2689,49 @@ input:checked + .slider:before { transform: translateX(14px); }
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
+/* Rankings / Leaderboard Mode Toggle */
+.rankings-mode-toggle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 18px 0 16px;
+}
+.mode-toggle-pills {
+  display: inline-flex;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  gap: 6px;
+}
+.mode-pill-btn {
+  padding: 8px 20px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.mode-pill-btn:hover {
+  color: #fff;
+}
+.mode-pill-btn.active {
+  background: linear-gradient(135deg, var(--accent-crimson), #c01438);
+  color: #fff;
+  box-shadow: 0 0 15px rgba(225, 29, 72, 0.4);
+}
+.cap-extra {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
 .api-status-pill:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 215, 0, 0.4);

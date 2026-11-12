@@ -33,11 +33,14 @@ const state = {
   compareP2: "",
   compareFormat: "all",
 
-  // Rankings
+  // Rankings & Leaderboards
   rankingsData: null,
   rankingsScope: "international",
   rankingsFormat: "odi",
+  rankingsMode: "rankings", // "rankings" | "leaderboards"
   activeRankingCategory: "batting",
+  activeLeaderboardCategory: "mostRuns", // "mostRuns" | "mostWickets" | "highestScores" | "bestBowling"
+  _lastLiveFingerprint: "",
 
   // Tournaments
   tournamentsList: [],
@@ -285,10 +288,12 @@ function startRefreshTimer() {
   stopRefreshTimer();
   state.refreshTimer = setInterval(() => {
     if (state.autoRefresh) {
-      // Live matches are always polled in background to keep header live badge accurate
-      loadLiveStreams(true);
-      if (state.currentTab !== "live") {
-        refreshActiveTabData(true);
+      // Do not poll if user has a modal open to prevent interrupting inspection
+      const anyModalOpen = document.querySelectorAll(".modal-backdrop:not(.hidden)").length > 0;
+      if (!anyModalOpen) {
+        // Poll ONLY live matches in background to keep live badge and cards updated
+        // NEVER poll inactive tabs automatically to eliminate loading spinner flashes
+        loadLiveStreams(true);
       }
     }
   }, state.refreshIntervalMs);
@@ -340,7 +345,19 @@ async function loadLiveStreams(isBackground = false) {
     }
 
     if (state.currentTab === "live") {
-      renderLiveStreams(state.liveMatches);
+      // Fingerprint match state so we only update DOM if something actually changed
+      const liveFingerprint = JSON.stringify(state.liveMatches.map(m => [
+        m.matchId, m.score, m.overs, m.crr, m.rrr,
+        m.striker?.name, m.striker?.runs, m.striker?.balls,
+        m.nonStriker?.name, m.nonStriker?.runs, m.nonStriker?.balls,
+        m.currentBowler?.name, m.currentBowler?.wickets, m.currentBowler?.runs, m.currentBowler?.overs,
+        (m.currentOverBalls || []).join(",")
+      ]));
+
+      if (state._lastLiveFingerprint !== liveFingerprint) {
+        state._lastLiveFingerprint = liveFingerprint;
+        renderLiveStreams(state.liveMatches);
+      }
     }
   } catch (err) {
     if (!isBackground) {
@@ -1203,7 +1220,7 @@ function setRankingsFormat(fmt) {
 
 async function loadRankings() {
   const tbody = document.getElementById("rankingsTableBody");
-  tbody.innerHTML = `<tr><td colspan="5" class="loading-cell"><div class="spinner" style="margin: 12px auto;"></div>Fetching rankings snapshot...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10" class="loading-cell"><div class="spinner" style="margin: 12px auto;"></div>Fetching rankings snapshot & leaderboards...</td></tr>`;
 
   try {
     let url = `/api/rankings?scope=${state.rankingsScope}&format=${state.rankingsFormat}`;
@@ -1217,57 +1234,119 @@ async function loadRankings() {
     // Render Caps if available
     renderCaps(data.leaderboards || {});
 
-    // Render current active category
-    renderRankingTable(data.rankings ? (data.rankings[state.activeRankingCategory] || []) : []);
+    // Render current active category or leaderboard
+    renderCurrentRankingsOrLeaderboard();
   } catch (err) {
     console.error("Error loading rankings:", err);
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--accent-crimson);">Failed to load rankings: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 24px; color: var(--accent-crimson);">Failed to load rankings: ${err.message}</td></tr>`;
   }
 }
 
 function renderCaps(leaderboards) {
   const orange = document.getElementById("orangeCapList");
   const purple = document.getElementById("purpleCapList");
+  const orangeSub = document.getElementById("orangeCapSubtitle");
+  const purpleSub = document.getElementById("purpleCapSubtitle");
+
+  const fmtLabel = state.rankingsScope === "overall" ? "Universe" : `${state.rankingsScope.toUpperCase()} ${state.rankingsFormat.toUpperCase()}`;
+  if (orangeSub) orangeSub.textContent = `Leading Run Scorers (${fmtLabel})`;
+  if (purpleSub) purpleSub.textContent = `Leading Wicket Takers (${fmtLabel})`;
 
   if (leaderboards && leaderboards.orangeCap && leaderboards.orangeCap.length > 0) {
-    orange.innerHTML = leaderboards.orangeCap.map((c, idx) => `
-      <div class="cap-leader-row" onclick="openPlayerModal(${c.id})" style="cursor: pointer;">
-        <span class="cap-rank-num">#${idx + 1}</span>
-        <span class="cap-player-name">${c.name}</span>
-        <span class="cap-player-team">${c.country}</span>
-        <span class="cap-score-stat">${c.runs.toLocaleString()} Runs (${c.hundreds}x100)</span>
-      </div>
-    `).join("");
+    orange.innerHTML = leaderboards.orangeCap.map((c, idx) => {
+      let medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`;
+      return `
+        <div class="cap-leader-row" onclick="openPlayerModal(${c.id})" style="cursor: pointer;" title="Click to view player profile">
+          <span class="cap-rank-num">${medal}</span>
+          <span class="cap-player-name">${c.name}</span>
+          <span class="cap-player-team">${c.country}</span>
+          <span class="cap-score-stat">
+            ${c.runs.toLocaleString()} Runs
+            <span class="cap-extra">(${c.hundreds}x100, ${c.fifties}x50, Avg: ${c.battingAvg || '-'})</span>
+          </span>
+        </div>
+      `;
+    }).join("");
   } else {
     orange.innerHTML = `<div style="padding: 12px; color: var(--text-muted); font-size: 13px;">Leading run records updated with each tournament match.</div>`;
   }
 
   if (leaderboards && leaderboards.purpleCap && leaderboards.purpleCap.length > 0) {
-    purple.innerHTML = leaderboards.purpleCap.map((c, idx) => `
-      <div class="cap-leader-row" onclick="openPlayerModal(${c.id})" style="cursor: pointer;">
-        <span class="cap-rank-num">#${idx + 1}</span>
-        <span class="cap-player-name">${c.name}</span>
-        <span class="cap-player-team">${c.country}</span>
-        <span class="cap-score-stat">${c.wickets} Wickets</span>
-      </div>
-    `).join("");
+    purple.innerHTML = leaderboards.purpleCap.map((c, idx) => {
+      let medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`;
+      return `
+        <div class="cap-leader-row" onclick="openPlayerModal(${c.id})" style="cursor: pointer;" title="Click to view player profile">
+          <span class="cap-rank-num">${medal}</span>
+          <span class="cap-player-name">${c.name}</span>
+          <span class="cap-player-team">${c.country}</span>
+          <span class="cap-score-stat">
+            ${c.wickets} Wickets
+            <span class="cap-extra">(Econ: ${c.economy || '-'}, Avg: ${c.bowlingAvg || '-'})</span>
+          </span>
+        </div>
+      `;
+    }).join("");
   } else {
     purple.innerHTML = `<div style="padding: 12px; color: var(--text-muted); font-size: 13px;">Leading wicket records updated with each tournament match.</div>`;
   }
 }
 
+function setRankingsMode(mode) {
+  state.rankingsMode = mode;
+  const btnR = document.getElementById("modeBtnRankings");
+  const btnLb = document.getElementById("modeBtnLeaderboards");
+  if (btnR) btnR.classList.toggle("active", mode === "rankings");
+  if (btnLb) btnLb.classList.toggle("active", mode === "leaderboards");
+
+  const rSubtabs = document.getElementById("rankingsSubtabsBar");
+  const lbSubtabs = document.getElementById("leaderboardSubtabsBar");
+  if (rSubtabs) rSubtabs.classList.toggle("hidden", mode !== "rankings");
+  if (lbSubtabs) lbSubtabs.classList.toggle("hidden", mode !== "leaderboards");
+
+  renderCurrentRankingsOrLeaderboard();
+}
+
 function switchRankingCategory(category) {
   state.activeRankingCategory = category;
-  document.querySelectorAll(".rankings-subtabs .subtab-btn").forEach((btn) => {
+  document.querySelectorAll("#rankingsSubtabsBar .subtab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.cat === category);
   });
-  if (state.rankingsData && state.rankingsData.rankings) {
-    renderRankingTable(state.rankingsData.rankings[category] || []);
+  renderCurrentRankingsOrLeaderboard();
+}
+
+function switchLeaderboardCategory(cat) {
+  state.activeLeaderboardCategory = cat;
+  document.querySelectorAll("#leaderboardSubtabsBar .subtab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.lbcat === cat);
+  });
+  renderCurrentRankingsOrLeaderboard();
+}
+
+function renderCurrentRankingsOrLeaderboard() {
+  if (!state.rankingsData) return;
+  if (state.rankingsMode === "leaderboards") {
+    renderLeaderboardTable(state.rankingsData.leaderboards || {});
+  } else {
+    renderRankingTable(state.rankingsData.rankings ? (state.rankingsData.rankings[state.activeRankingCategory] || []) : []);
   }
 }
 
 function renderRankingTable(items) {
+  const thead = document.getElementById("rankingsTableHead");
   const tbody = document.getElementById("rankingsTableBody");
+
+  if (thead) {
+    thead.innerHTML = `
+      <tr>
+        <th style="width: 70px;">Rank</th>
+        <th>Player / Team</th>
+        <th>Nation / Affiliation</th>
+        <th style="text-align: right;">Rating Points</th>
+        <th style="text-align: right;">Key Statistics</th>
+      </tr>
+    `;
+  }
+
   if (!items || items.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 32px; color: var(--text-muted);">No snapshot records in this category for the selected scope.</td></tr>`;
     return;
@@ -1290,6 +1369,154 @@ function renderRankingTable(items) {
       </tr>
     `;
   }).join("");
+}
+
+function renderLeaderboardTable(leaderboards) {
+  const thead = document.getElementById("rankingsTableHead");
+  const tbody = document.getElementById("rankingsTableBody");
+  const cat = state.activeLeaderboardCategory || "mostRuns";
+
+  if (cat === "mostRuns") {
+    if (thead) {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 70px;">Rank</th>
+          <th>Batter</th>
+          <th>Nation</th>
+          <th style="text-align: right;">Mat / Inn</th>
+          <th style="text-align: right; color: #ff9100;">Total Runs</th>
+          <th style="text-align: right;">HS</th>
+          <th style="text-align: right;">Average</th>
+          <th style="text-align: right;">Strike Rate</th>
+          <th style="text-align: right;">100s / 50s</th>
+        </tr>
+      `;
+    }
+    const rows = leaderboards.mostRuns || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted);">No run leader records found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      let medal = r.rank === 1 ? "🥇 " : r.rank === 2 ? "🥈 " : r.rank === 3 ? "🥉 " : "";
+      return `
+        <tr>
+          <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
+          <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-gold);">${r.name}</td>
+          <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right;">${r.matches} / ${r.innings}</td>
+          <td style="text-align: right; font-weight: 700; color: #ff9100; font-family: var(--font-heading); font-size: 15px;">${r.runs.toLocaleString()}</td>
+          <td style="text-align: right;">${r.highestScore}</td>
+          <td style="text-align: right; color: var(--accent-green); font-weight: 600;">${r.battingAvg}</td>
+          <td style="text-align: right;">${r.strikeRate}</td>
+          <td style="text-align: right;">${r.hundreds} / ${r.fifties}</td>
+        </tr>
+      `;
+    }).join("");
+  } else if (cat === "mostWickets") {
+    if (thead) {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 70px;">Rank</th>
+          <th>Bowler</th>
+          <th>Nation</th>
+          <th style="text-align: right;">Matches</th>
+          <th style="text-align: right; color: #c084fc;">Wickets</th>
+          <th style="text-align: right;">Overs</th>
+          <th style="text-align: right;">Runs Conceded</th>
+          <th style="text-align: right;">Economy</th>
+          <th style="text-align: right;">Bowling Avg</th>
+          <th style="text-align: right;">Best Bowling</th>
+        </tr>
+      `;
+    }
+    const rows = leaderboards.mostWickets || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 32px; color: var(--text-muted);">No wicket leader records found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      let medal = r.rank === 1 ? "🥇 " : r.rank === 2 ? "🥈 " : r.rank === 3 ? "🥉 " : "";
+      return `
+        <tr>
+          <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
+          <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-purple);">${r.name}</td>
+          <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right;">${r.matches}</td>
+          <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading); font-size: 15px;">${r.wickets}</td>
+          <td style="text-align: right;">${r.overs}</td>
+          <td style="text-align: right;">${r.runsConceded}</td>
+          <td style="text-align: right; color: var(--accent-green); font-weight: 600;">${r.economy}</td>
+          <td style="text-align: right;">${r.bowlingAvg}</td>
+          <td style="text-align: right; font-weight: 600;">${r.bestBowling || "-"}</td>
+        </tr>
+      `;
+    }).join("");
+  } else if (cat === "highestScores") {
+    if (thead) {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 70px;">Rank</th>
+          <th>Batter</th>
+          <th>Nation</th>
+          <th style="text-align: right; color: var(--accent-gold);">Highest Score</th>
+          <th style="text-align: right;">Career Runs</th>
+          <th style="text-align: right;">Centuries / Fifties</th>
+          <th style="text-align: right;">Matches</th>
+        </tr>
+      `;
+    }
+    const rows = leaderboards.highestScores || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      let medal = r.rank === 1 ? "🥇 " : r.rank === 2 ? "🥈 " : r.rank === 3 ? "🥉 " : "";
+      return `
+        <tr>
+          <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
+          <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-gold);">${r.name}</td>
+          <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: #ff9100; font-family: var(--font-heading); font-size: 16px;">${r.score}</td>
+          <td style="text-align: right;">${r.runs.toLocaleString()}</td>
+          <td style="text-align: right;">${r.hundreds}x100, ${r.fifties}x50</td>
+          <td style="text-align: right;">${r.matches}</td>
+        </tr>
+      `;
+    }).join("");
+  } else if (cat === "bestBowling") {
+    if (thead) {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 70px;">Rank</th>
+          <th>Bowler</th>
+          <th>Nation</th>
+          <th style="text-align: right; color: var(--accent-purple);">Best Bowling Figures</th>
+          <th style="text-align: right;">Career Wickets</th>
+          <th style="text-align: right;">Matches</th>
+        </tr>
+      `;
+    }
+    const rows = leaderboards.bestBowling || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      let medal = r.rank === 1 ? "🥇 " : r.rank === 2 ? "🥈 " : r.rank === 3 ? "🥉 " : "";
+      return `
+        <tr>
+          <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
+          <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-purple);">${r.name}</td>
+          <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading); font-size: 16px;">${r.bestBowling}</td>
+          <td style="text-align: right;">${r.wickets}</td>
+          <td style="text-align: right;">${r.matches}</td>
+        </tr>
+      `;
+    }).join("");
+  }
 }
 
 // -----------------------------------------------------------------------------

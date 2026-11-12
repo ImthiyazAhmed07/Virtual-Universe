@@ -357,7 +357,7 @@
         <div class="cap-card orange-cap">
           <div class="cap-header">
             <span class="cap-badge">🟠 ORANGE CAP</span>
-            <span class="cap-metric">Leading Run Scorers</span>
+            <span class="cap-metric" id="orangeCapSubtitle">Leading Run Scorers</span>
           </div>
           <div id="orangeCapList" class="cap-leaders-list">Loading...</div>
         </div>
@@ -365,23 +365,43 @@
         <div class="cap-card purple-cap">
           <div class="cap-header">
             <span class="cap-badge">🟣 PURPLE CAP</span>
-            <span class="cap-metric">Leading Wicket Takers</span>
+            <span class="cap-metric" id="purpleCapSubtitle">Leading Wicket Takers</span>
           </div>
           <div id="purpleCapList" class="cap-leaders-list">Loading...</div>
         </div>
       </div>
 
+      <!-- Mode Toggle: Official Ratings Rankings vs Statistical Leaderboard -->
+      <div class="rankings-mode-toggle-wrap">
+        <div class="mode-toggle-pills">
+          <button class="mode-pill-btn active" id="modeBtnRankings" onclick="setRankingsMode('rankings')">
+            👑 ICC / Universal Rankings
+          </button>
+          <button class="mode-pill-btn" id="modeBtnLeaderboards" onclick="setRankingsMode('leaderboards')">
+            🔥 Statistical Leaderboard (Runs, Wickets & Records)
+          </button>
+        </div>
+      </div>
+
       <!-- Official Rankings Category Subtabs -->
-      <div class="rankings-subtabs">
+      <div id="rankingsSubtabsBar" class="rankings-subtabs">
         <button class="subtab-btn active" data-cat="batting" onclick="switchRankingCategory('batting')">🏏 Batting Rankings</button>
         <button class="subtab-btn" data-cat="bowling" onclick="switchRankingCategory('bowling')">🎯 Bowling Rankings</button>
         <button class="subtab-btn" data-cat="all_rounders" onclick="switchRankingCategory('all_rounders')">⚡ All-Rounder Rankings</button>
         <button class="subtab-btn" id="teamsRankingSubtab" data-cat="teams" onclick="switchRankingCategory('teams')">🏆 Team Rankings</button>
       </div>
 
+      <!-- Statistical Leaderboard Subtabs -->
+      <div id="leaderboardSubtabsBar" class="rankings-subtabs hidden">
+        <button class="subtab-btn active" data-lbcat="mostRuns" onclick="switchLeaderboardCategory('mostRuns')">🏏 Most Runs (Orange Cap Race)</button>
+        <button class="subtab-btn" data-lbcat="mostWickets" onclick="switchLeaderboardCategory('mostWickets')">🎯 Most Wickets (Purple Cap Race)</button>
+        <button class="subtab-btn" data-lbcat="highestScores" onclick="switchLeaderboardCategory('highestScores')">💥 Highest Individual Scores</button>
+        <button class="subtab-btn" data-lbcat="bestBowling" onclick="switchLeaderboardCategory('bestBowling')">🎳 Best Bowling Figures</button>
+      </div>
+
       <div class="rankings-table-wrap">
         <table class="rankings-table">
-          <thead>
+          <thead id="rankingsTableHead">
             <tr>
               <th style="width: 70px;">Rank</th>
               <th>Player / Team</th>
