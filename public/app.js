@@ -1342,14 +1342,42 @@ function setRankingsMode(mode) {
 
   const rSubtabs = document.getElementById("rankingsSubtabsBar");
   const lbSubtabs = document.getElementById("leaderboardSubtabsBar");
-  if (rSubtabs) rSubtabs.classList.toggle("hidden", mode !== "rankings");
-  if (lbSubtabs) lbSubtabs.classList.toggle("hidden", mode !== "leaderboards");
+  if (rSubtabs) {
+    if (mode === "rankings") rSubtabs.classList.remove("hidden");
+    else rSubtabs.classList.add("hidden");
+  }
+  if (lbSubtabs) {
+    if (mode === "leaderboards") lbSubtabs.classList.remove("hidden");
+    else lbSubtabs.classList.add("hidden");
+  }
+
+  if (mode === "rankings") {
+    document.querySelectorAll("#rankingsSubtabsBar .subtab-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.cat === state.activeRankingCategory);
+    });
+  } else {
+    document.querySelectorAll("#leaderboardSubtabsBar .subtab-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.lbcat === state.activeLeaderboardCategory);
+    });
+  }
 
   renderCurrentRankingsOrLeaderboard();
 }
 
 function switchRankingCategory(category) {
+  state.rankingsMode = "rankings";
   state.activeRankingCategory = category;
+
+  const btnR = document.getElementById("modeBtnRankings");
+  const btnLb = document.getElementById("modeBtnLeaderboards");
+  if (btnR) btnR.classList.add("active");
+  if (btnLb) btnLb.classList.remove("active");
+
+  const rSubtabs = document.getElementById("rankingsSubtabsBar");
+  const lbSubtabs = document.getElementById("leaderboardSubtabsBar");
+  if (rSubtabs) rSubtabs.classList.remove("hidden");
+  if (lbSubtabs) lbSubtabs.classList.add("hidden");
+
   document.querySelectorAll("#rankingsSubtabsBar .subtab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.cat === category);
   });
@@ -1357,7 +1385,19 @@ function switchRankingCategory(category) {
 }
 
 function switchLeaderboardCategory(cat) {
+  state.rankingsMode = "leaderboards";
   state.activeLeaderboardCategory = cat;
+
+  const btnR = document.getElementById("modeBtnRankings");
+  const btnLb = document.getElementById("modeBtnLeaderboards");
+  if (btnR) btnR.classList.remove("active");
+  if (btnLb) btnLb.classList.add("active");
+
+  const rSubtabs = document.getElementById("rankingsSubtabsBar");
+  const lbSubtabs = document.getElementById("leaderboardSubtabsBar");
+  if (rSubtabs) rSubtabs.classList.add("hidden");
+  if (lbSubtabs) lbSubtabs.classList.remove("hidden");
+
   document.querySelectorAll("#leaderboardSubtabsBar .subtab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.lbcat === cat);
   });
@@ -1401,10 +1441,15 @@ function renderRankingTable(items) {
     else if (r.rank === 2) { rankBadgeClass += " silver"; medal = "🥈 "; }
     else if (r.rank === 3) { rankBadgeClass += " bronze"; medal = "🥉 "; }
 
+    const isClickable = r.id && !isNaN(Number(r.id));
+    const nameHtml = isClickable
+      ? `<td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-gold); font-weight: 600;">${r.name}</td>`
+      : `<td class="rank-entity-name">${r.name}</td>`;
+
     return `
       <tr>
         <td class="${rankBadgeClass}">${medal}#${r.rank}</td>
-        <td class="rank-entity-name">${r.name}</td>
+        ${nameHtml}
         <td style="color: var(--text-muted);">${r.team || "-"}</td>
         <td class="rank-rating-cell">${r.rating}</td>
         <td class="rank-stat-cell">${r.stat || "-"}</td>
@@ -1425,6 +1470,7 @@ function renderLeaderboardTable(leaderboards) {
           <th style="width: 70px;">Rank</th>
           <th>Batter</th>
           <th>Nation</th>
+          <th style="text-align: right; color: var(--accent-gold);">Rating</th>
           <th style="text-align: right;">Mat / Inn</th>
           <th style="text-align: right; color: #ff9100;">Total Runs</th>
           <th style="text-align: right;">HS</th>
@@ -1436,7 +1482,7 @@ function renderLeaderboardTable(leaderboards) {
     }
     const rows = leaderboards.mostRuns || [];
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted);">No run leader records found.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 32px; color: var(--text-muted);">No run leader records found.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -1446,6 +1492,7 @@ function renderLeaderboardTable(leaderboards) {
           <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
           <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-gold);">${r.name}</td>
           <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: var(--accent-gold); font-family: var(--font-heading);">${r.rating || "-"}</td>
           <td style="text-align: right;">${r.matches} / ${r.innings}</td>
           <td style="text-align: right; font-weight: 700; color: #ff9100; font-family: var(--font-heading); font-size: 15px;">${r.runs.toLocaleString()}</td>
           <td style="text-align: right;">${r.highestScore}</td>
@@ -1462,6 +1509,7 @@ function renderLeaderboardTable(leaderboards) {
           <th style="width: 70px;">Rank</th>
           <th>Bowler</th>
           <th>Nation</th>
+          <th style="text-align: right; color: #c084fc;">Rating</th>
           <th style="text-align: right;">Matches</th>
           <th style="text-align: right; color: #c084fc;">Wickets</th>
           <th style="text-align: right;">Overs</th>
@@ -1474,7 +1522,7 @@ function renderLeaderboardTable(leaderboards) {
     }
     const rows = leaderboards.mostWickets || [];
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 32px; color: var(--text-muted);">No wicket leader records found.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 32px; color: var(--text-muted);">No wicket leader records found.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -1484,6 +1532,7 @@ function renderLeaderboardTable(leaderboards) {
           <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
           <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-purple);">${r.name}</td>
           <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading);">${r.rating || "-"}</td>
           <td style="text-align: right;">${r.matches}</td>
           <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading); font-size: 15px;">${r.wickets}</td>
           <td style="text-align: right;">${r.overs}</td>
@@ -1501,6 +1550,7 @@ function renderLeaderboardTable(leaderboards) {
           <th style="width: 70px;">Rank</th>
           <th>Batter</th>
           <th>Nation</th>
+          <th style="text-align: right; color: var(--accent-gold);">Rating</th>
           <th style="text-align: right; color: var(--accent-gold);">Highest Score</th>
           <th style="text-align: right;">Career Runs</th>
           <th style="text-align: right;">Centuries / Fifties</th>
@@ -1510,7 +1560,7 @@ function renderLeaderboardTable(leaderboards) {
     }
     const rows = leaderboards.highestScores || [];
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -1520,6 +1570,7 @@ function renderLeaderboardTable(leaderboards) {
           <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
           <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-gold);">${r.name}</td>
           <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: var(--accent-gold); font-family: var(--font-heading);">${r.rating || "-"}</td>
           <td style="text-align: right; font-weight: 700; color: #ff9100; font-family: var(--font-heading); font-size: 16px;">${r.score}</td>
           <td style="text-align: right;">${r.runs.toLocaleString()}</td>
           <td style="text-align: right;">${r.hundreds}x100, ${r.fifties}x50</td>
@@ -1534,6 +1585,7 @@ function renderLeaderboardTable(leaderboards) {
           <th style="width: 70px;">Rank</th>
           <th>Bowler</th>
           <th>Nation</th>
+          <th style="text-align: right; color: var(--accent-purple);">Rating</th>
           <th style="text-align: right; color: var(--accent-purple);">Best Bowling Figures</th>
           <th style="text-align: right;">Career Wickets</th>
           <th style="text-align: right;">Matches</th>
@@ -1542,7 +1594,7 @@ function renderLeaderboardTable(leaderboards) {
     }
     const rows = leaderboards.bestBowling || [];
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">No records found.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -1552,6 +1604,7 @@ function renderLeaderboardTable(leaderboards) {
           <td class="rank-badge-cell ${r.rank <= 3 ? 'gold' : ''}">${medal}#${r.rank}</td>
           <td class="rank-entity-name" onclick="openPlayerModal(${r.id})" style="cursor: pointer; color: var(--accent-purple);">${r.name}</td>
           <td style="color: var(--text-muted);">${r.country || "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading);">${r.rating || "-"}</td>
           <td style="text-align: right; font-weight: 700; color: #c084fc; font-family: var(--font-heading); font-size: 16px;">${r.bestBowling}</td>
           <td style="text-align: right;">${r.wickets}</td>
           <td style="text-align: right;">${r.matches}</td>
@@ -2006,9 +2059,12 @@ async function openPlayerModal(playerId) {
             <th style="text-align: right;">Mat</th>
             <th style="text-align: right;">Runs</th>
             <th style="text-align: right;">HS</th>
-            <th style="text-align: right;">100s</th>
-            <th style="text-align: right;">50s</th>
+            <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
+            <th style="text-align: right;">SR</th>
+            <th style="text-align: right;">100s/50s</th>
             <th style="text-align: right;">Wickets</th>
+            <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
+            <th style="text-align: right;">Econ</th>
             <th style="text-align: right;">Best Bowling</th>
           </tr>
         </thead>
@@ -2018,9 +2074,12 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.careerMatches || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.careerRuns || 0).toLocaleString()}</td>
             <td style="text-align: right;">${p.careerHighestScore || 0}</td>
-            <td style="text-align: right;">${p.careerHundreds || 0}</td>
-            <td style="text-align: right;">${p.careerFifties || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.careerBattingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerStrikeRate || "-"}</td>
+            <td style="text-align: right; color: var(--text-muted);">${p.careerHundreds || 0} / ${p.careerFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.careerWickets || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.careerBowlingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerEconomy || "-"}</td>
             <td style="text-align: right; font-weight: 600;">${(p.careerBestFiguresWickets > 0 || p.careerBestFiguresRuns > 0) ? `${p.careerBestFiguresWickets || 0}/${p.careerBestFiguresRuns || 0}` : "-"}</td>
           </tr>
           <tr>
@@ -2028,9 +2087,12 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.odiMatches || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.odiRuns || 0).toLocaleString()}</td>
             <td style="text-align: right;">${p.odiHighestScore || 0}</td>
-            <td style="text-align: right;">${p.odiHundreds || 0}</td>
-            <td style="text-align: right;">${p.odiFifties || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.odiBattingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiStrikeRate || "-"}</td>
+            <td style="text-align: right; color: var(--text-muted);">${p.odiHundreds || 0} / ${p.odiFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.odiWickets || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.odiBowlingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiEconomy || "-"}</td>
             <td style="text-align: right; font-weight: 600;">${(p.odiBestFiguresWickets > 0 || p.odiBestFiguresRuns > 0) ? `${p.odiBestFiguresWickets || 0}/${p.odiBestFiguresRuns || 0}` : "-"}</td>
           </tr>
           <tr>
@@ -2038,9 +2100,12 @@ async function openPlayerModal(playerId) {
             <td style="text-align: right;">${p.testMatches || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.testRuns || 0).toLocaleString()}</td>
             <td style="text-align: right;">${p.testHighestScore || 0}</td>
-            <td style="text-align: right;">${p.testHundreds || 0}</td>
-            <td style="text-align: right;">${p.testFifties || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.testBattingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testStrikeRate || "-"}</td>
+            <td style="text-align: right; color: var(--text-muted);">${p.testHundreds || 0} / ${p.testFifties || 0}</td>
             <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.testWickets || 0}</td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.testBowlingAvg || "-"}</td>
+            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testEconomy || "-"}</td>
             <td style="text-align: right; font-weight: 600;">${(p.testBestFiguresWickets > 0 || p.testBestFiguresRuns > 0) ? `${p.testBestFiguresWickets || 0}/${p.testBestFiguresRuns || 0}` : "-"}</td>
           </tr>
         </tbody>

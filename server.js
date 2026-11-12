@@ -1421,6 +1421,30 @@ app.get("/api/players/:id", async (req, res) => {
       });
     }
 
+    const calcBatAvg = (runs, inn, no) => {
+      const dismissals = Math.max(0, (Number(inn) || 0) - (Number(no) || 0));
+      if (dismissals === 0) return (Number(runs) || 0) > 0 ? `${Number(runs)}.00*` : "-";
+      return ((Number(runs) || 0) / dismissals).toFixed(2);
+    };
+
+    const calcBowlAvg = (runsConceded, wickets) => {
+      const wkts = Number(wickets) || 0;
+      if (wkts === 0) return "-";
+      return ((Number(runsConceded) || 0) / wkts).toFixed(2);
+    };
+
+    const calcSR = (runs, balls) => {
+      const b = Number(balls) || 0;
+      if (b === 0) return "-";
+      return (((Number(runs) || 0) / b) * 100).toFixed(1);
+    };
+
+    const calcEcon = (runsConceded, ballsBowled) => {
+      const b = Number(ballsBowled) || 0;
+      if (b === 0) return "-";
+      return (((Number(runsConceded) || 0) / b) * 6).toFixed(2);
+    };
+
     res.json({
       success: true,
       player: {
@@ -1453,12 +1477,17 @@ app.get("/api/players/:id", async (req, res) => {
         careerHundreds: player.career_hundreds,
         careerFifties: player.career_fifties,
         careerHighestScore: player.career_highest_score,
+        careerBattingAvg: calcBatAvg(player.career_runs, player.career_innings, player.career_not_outs),
+        careerBowlingAvg: calcBowlAvg(player.career_runs_conceded, player.career_wickets),
+        careerStrikeRate: calcSR(player.career_runs, player.career_balls_faced),
+        careerEconomy: calcEcon(player.career_runs_conceded, player.career_balls_bowled),
         careerWickets: player.career_wickets,
         careerBallsBowled: player.career_balls_bowled,
         careerRunsConceded: player.career_runs_conceded,
         careerOversBowled: formatCricketOvers(null, player.career_balls_bowled),
         careerBestFiguresWickets: player.career_best_figures_wickets || 0,
         careerBestFiguresRuns: player.career_best_figures_runs || 0,
+
         odiMatches: player.odi_matches || 0,
         odiInnings: player.odi_innings || 0,
         odiRuns: player.odi_runs || 0,
@@ -1466,10 +1495,15 @@ app.get("/api/players/:id", async (req, res) => {
         odiHundreds: player.odi_hundreds || 0,
         odiFifties: player.odi_fifties || 0,
         odiHighestScore: player.odi_highest_score || 0,
+        odiBattingAvg: calcBatAvg(player.odi_runs, player.odi_innings, player.odi_not_outs),
+        odiBowlingAvg: calcBowlAvg(player.odi_runs_conceded, player.odi_wickets),
+        odiStrikeRate: calcSR(player.odi_runs, player.odi_balls_faced),
+        odiEconomy: calcEcon(player.odi_runs_conceded, player.odi_balls_bowled),
         odiWickets: player.odi_wickets || 0,
         odiOversBowled: formatCricketOvers(null, player.odi_balls_bowled || 0),
         odiBestFiguresWickets: player.odi_best_figures_wickets || 0,
         odiBestFiguresRuns: player.odi_best_figures_runs || 0,
+
         testMatches: player.test_matches || 0,
         testInnings: player.test_innings || 0,
         testRuns: player.test_runs || 0,
@@ -1477,6 +1511,10 @@ app.get("/api/players/:id", async (req, res) => {
         testHundreds: player.test_hundreds || 0,
         testFifties: player.test_fifties || 0,
         testHighestScore: player.test_highest_score || 0,
+        testBattingAvg: calcBatAvg(player.test_runs, player.test_innings, player.test_not_outs),
+        testBowlingAvg: calcBowlAvg(player.test_runs_conceded, player.test_wickets),
+        testStrikeRate: calcSR(player.test_runs, player.test_balls_faced),
+        testEconomy: calcEcon(player.test_runs_conceded, player.test_balls_bowled),
         testWickets: player.test_wickets || 0,
         testOversBowled: formatCricketOvers(null, player.test_balls_bowled || 0),
         testBestFiguresWickets: player.test_best_figures_wickets || 0,
@@ -1557,6 +1595,7 @@ app.get("/api/rankings", async (req, res) => {
         if (rankings[r.category]) {
           rankings[r.category].push({
             rank: r.rank,
+            id: r.entity_id ? Number(r.entity_id) : null,
             name: r.entity_name,
             team: r.team_name,
             rating: r.rating,
@@ -1568,7 +1607,8 @@ app.get("/api/rankings", async (req, res) => {
       // Statistical Leaderboards (Raw numerical runs, wickets, averages, etc.)
       const [batLeadersRes, bowlLeadersRes, hsLeadersRes, bbiLeadersRes] = await Promise.all([
         query(`
-          SELECT id, name, nationality, ${runsCol} as runs, ${matchesCol} as matches, ${innCol} as innings,
+          SELECT id, name, nationality, overall_rating, batting_rating, bowling_rating,
+                 ${runsCol} as runs, ${matchesCol} as matches, ${innCol} as innings,
                  ${hsCol} as highest_score, ${hundredsCol} as hundreds, ${fiftiesCol} as fifties, ${ballsFacedCol} as balls_faced,
                  ROUND(${runsCol}::numeric / GREATEST(1, (${innCol} - ${notOutsCol}))::numeric, 2) as batting_avg,
                  ROUND((${runsCol}::numeric / GREATEST(1, ${ballsFacedCol})::numeric) * 100, 1) as strike_rate
@@ -1578,7 +1618,8 @@ app.get("/api/rankings", async (req, res) => {
           LIMIT 25
         `),
         query(`
-          SELECT id, name, nationality, ${wktsCol} as wickets, ${matchesCol} as matches,
+          SELECT id, name, nationality, overall_rating, batting_rating, bowling_rating,
+                 ${wktsCol} as wickets, ${matchesCol} as matches,
                  ${ballsBowledCol} as balls_bowled, ${runsConcededCol} as runs_conceded,
                  ${bbiWCol} as best_wickets, ${bbiRCol} as best_runs,
                  ROUND((${runsConcededCol}::numeric / GREATEST(1, ${ballsBowledCol})::numeric) * 6, 2) as economy,
@@ -1589,7 +1630,8 @@ app.get("/api/rankings", async (req, res) => {
           LIMIT 25
         `),
         query(`
-          SELECT id, name, nationality, ${hsCol} as score, ${runsCol} as runs,
+          SELECT id, name, nationality, overall_rating, batting_rating, bowling_rating,
+                 ${hsCol} as score, ${runsCol} as runs,
                  ${hundredsCol} as hundreds, ${fiftiesCol} as fifties, ${matchesCol} as matches
           FROM players
           WHERE ${hsCol} > 0
@@ -1597,7 +1639,8 @@ app.get("/api/rankings", async (req, res) => {
           LIMIT 25
         `),
         query(`
-          SELECT id, name, nationality, ${bbiWCol} as best_wickets, ${bbiRCol} as best_runs,
+          SELECT id, name, nationality, overall_rating, batting_rating, bowling_rating,
+                 ${bbiWCol} as best_wickets, ${bbiRCol} as best_runs,
                  ${wktsCol} as wickets, ${matchesCol} as matches
           FROM players
           WHERE ${bbiWCol} > 0
@@ -1611,6 +1654,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.batting_rating || r.overall_rating || 0),
         matches: Number(r.matches) || 0,
         innings: Number(r.innings) || 0,
         runs: Number(r.runs) || 0,
@@ -1626,6 +1670,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.bowling_rating || r.overall_rating || 0),
         matches: Number(r.matches) || 0,
         wickets: Number(r.wickets) || 0,
         overs: formatCricketOvers(null, Number(r.balls_bowled) || 0),
@@ -1643,6 +1688,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.batting_rating || r.overall_rating || 0),
         score: Number(r.score) || 0,
         runs: Number(r.runs) || 0,
         hundreds: Number(r.hundreds) || 0,
@@ -1655,6 +1701,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.bowling_rating || r.overall_rating || 0),
         bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
         wickets: Number(r.wickets) || 0,
         matches: Number(r.matches) || 0,
@@ -1700,6 +1747,9 @@ app.get("/api/rankings", async (req, res) => {
         query(`
           SELECT tps.player_id as id, tps.player_name as name, 
                  MAX(p.nationality) as nationality,
+                 MAX(p.overall_rating) as overall_rating,
+                 MAX(p.batting_rating) as batting_rating,
+                 MAX(p.bowling_rating) as bowling_rating,
                  SUM(tps.runs) as runs, 
                  SUM(tps.matches) as matches,
                  MAX(p.${hsCol}) as highest_score,
@@ -1717,6 +1767,9 @@ app.get("/api/rankings", async (req, res) => {
         query(`
           SELECT tps.player_id as id, tps.player_name as name, 
                  MAX(p.nationality) as nationality,
+                 MAX(p.overall_rating) as overall_rating,
+                 MAX(p.batting_rating) as batting_rating,
+                 MAX(p.bowling_rating) as bowling_rating,
                  SUM(tps.wickets) as wickets, 
                  SUM(tps.matches) as matches,
                  SUM(tps.balls_bowled) as balls_bowled,
@@ -1735,6 +1788,8 @@ app.get("/api/rankings", async (req, res) => {
         query(`
           SELECT tps.player_id as id, tps.player_name as name,
                  MAX(p.nationality) as nationality,
+                 MAX(p.overall_rating) as overall_rating,
+                 MAX(p.batting_rating) as batting_rating,
                  MAX(p.${hsCol}) as score,
                  SUM(tps.runs) as runs,
                  SUM(tps.hundreds) as hundreds,
@@ -1751,6 +1806,8 @@ app.get("/api/rankings", async (req, res) => {
         query(`
           SELECT tps.player_id as id, tps.player_name as name,
                  MAX(p.nationality) as nationality,
+                 MAX(p.overall_rating) as overall_rating,
+                 MAX(p.bowling_rating) as bowling_rating,
                  MAX(p.${bbiWCol}) as best_wickets,
                  MIN(CASE WHEN p.${bbiRCol} > 0 THEN p.${bbiRCol} ELSE 999 END) as best_runs,
                  SUM(tps.wickets) as wickets,
@@ -1769,7 +1826,7 @@ app.get("/api/rankings", async (req, res) => {
         rank: idx + 1,
         name: r.name,
         team: formatCountry(r.nationality),
-        rating: Math.round(Number(r.runs) * 1.5 + Number(r.batting_avg || 0) * 8),
+        rating: Number(r.batting_rating || r.overall_rating || Math.round(Number(r.runs) * 1.5 + Number(r.batting_avg || 0) * 8)),
         stat: `${r.runs} Runs (${r.total_hundreds}x100, ${r.total_fifties}x50, Avg: ${r.batting_avg || 0})`,
       }));
 
@@ -1777,7 +1834,7 @@ app.get("/api/rankings", async (req, res) => {
         rank: idx + 1,
         name: r.name,
         team: formatCountry(r.nationality),
-        rating: Math.round(Number(r.wickets) * 45 - Number(r.economy || 0) * 10),
+        rating: Number(r.bowling_rating || r.overall_rating || Math.round(Number(r.wickets) * 45 - Number(r.economy || 0) * 10)),
         stat: `${r.wickets} Wkts (Econ: ${r.economy || 0}, ${formatCricketOvers(null, Number(r.balls_bowled))} ov)`,
       }));
 
@@ -1786,6 +1843,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.batting_rating || r.overall_rating || 0),
         matches: Number(r.matches) || 0,
         innings: Number(r.matches) || 0,
         runs: Number(r.runs) || 0,
@@ -1804,6 +1862,7 @@ app.get("/api/rankings", async (req, res) => {
           id: r.id,
           name: r.name,
           country: formatCountry(r.nationality),
+          rating: Number(r.bowling_rating || r.overall_rating || 0),
           matches: Number(r.matches) || 0,
           wickets: Number(r.wickets) || 0,
           overs: formatCricketOvers(null, Number(r.balls_bowled) || 0),
@@ -1819,6 +1878,7 @@ app.get("/api/rankings", async (req, res) => {
         id: r.id,
         name: r.name,
         country: formatCountry(r.nationality),
+        rating: Number(r.batting_rating || r.overall_rating || 0),
         score: Number(r.score) || 0,
         runs: Number(r.runs) || 0,
         hundreds: Number(r.hundreds) || 0,
@@ -1834,6 +1894,7 @@ app.get("/api/rankings", async (req, res) => {
           id: r.id,
           name: r.name,
           country: formatCountry(r.nationality),
+          rating: Number(r.bowling_rating || r.overall_rating || 0),
           bestBowling: bbiStr,
           wickets: Number(r.wickets) || 0,
           matches: Number(r.matches) || 0,
@@ -1897,7 +1958,7 @@ app.get("/api/rankings", async (req, res) => {
         LIMIT 25
       `),
       query(`
-        SELECT id, name, nationality,
+        SELECT id, name, nationality, overall_rating, batting_rating,
                GREATEST(COALESCE(career_highest_score,0), COALESCE(odi_highest_score,0), COALESCE(test_highest_score,0)) as score,
                (COALESCE(career_runs,0) + COALESCE(odi_runs,0) + COALESCE(test_runs,0)) as runs,
                (COALESCE(career_hundreds,0) + COALESCE(odi_hundreds,0) + COALESCE(test_hundreds,0)) as hundreds,
@@ -1909,7 +1970,7 @@ app.get("/api/rankings", async (req, res) => {
         LIMIT 25
       `),
       query(`
-        SELECT id, name, nationality,
+        SELECT id, name, nationality, overall_rating, bowling_rating,
                GREATEST(COALESCE(career_best_figures_wickets,0), COALESCE(odi_best_figures_wickets,0), COALESCE(test_best_figures_wickets,0)) as best_wickets,
                LEAST(NULLIF(COALESCE(career_best_figures_runs,0),0), NULLIF(COALESCE(odi_best_figures_runs,0),0), NULLIF(COALESCE(test_best_figures_runs,0),0)) as best_runs,
                (COALESCE(career_wickets,0) + COALESCE(odi_wickets,0) + COALESCE(test_wickets,0)) as total_wickets,
@@ -1926,6 +1987,7 @@ app.get("/api/rankings", async (req, res) => {
       id: r.id,
       name: r.name,
       country: formatCountry(r.nationality),
+      rating: Number(r.batting_rating || r.overall_rating || 0),
       matches: Number(r.matches) || 0,
       innings: Number(r.innings) || 0,
       runs: Number(r.runs) || 0,
@@ -1941,6 +2003,7 @@ app.get("/api/rankings", async (req, res) => {
       id: r.id,
       name: r.name,
       country: formatCountry(r.nationality),
+      rating: Number(r.bowling_rating || r.overall_rating || 0),
       matches: Number(r.matches) || 0,
       wickets: Number(r.wickets) || 0,
       overs: formatCricketOvers(null, Number(r.balls_bowled) || 0),
@@ -1955,6 +2018,7 @@ app.get("/api/rankings", async (req, res) => {
       id: r.id,
       name: r.name,
       country: formatCountry(r.nationality),
+      rating: Number(r.batting_rating || r.overall_rating || 0),
       score: Number(r.score) || 0,
       runs: Number(r.runs) || 0,
       hundreds: Number(r.hundreds) || 0,
@@ -1967,6 +2031,7 @@ app.get("/api/rankings", async (req, res) => {
       id: r.id,
       name: r.name,
       country: formatCountry(r.nationality),
+      rating: Number(r.bowling_rating || r.overall_rating || 0),
       bestBowling: (r.best_wickets > 0 || r.best_runs > 0) ? `${r.best_wickets || 0}/${r.best_runs || 0}` : "-",
       wickets: Number(r.total_wickets) || 0,
       matches: Number(r.matches) || 0,
