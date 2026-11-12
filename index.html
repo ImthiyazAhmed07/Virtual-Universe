@@ -444,7 +444,19 @@
         </div>
 
         <div class="tourney-select-row">
-          <label class="tourney-select-label">Active Tournament:</label>
+          <div class="tourney-search-wrap">
+            <span class="tourney-search-icon">🔍</span>
+            <input
+              type="text"
+              id="tournamentSearchInput"
+              class="tourney-search-input"
+              placeholder="Search tournament by name or code (e.g. Worldcup, IPL, Ranji)..."
+              oninput="onTournamentSearchInput(this.value)"
+              onfocus="onTournamentSearchFocus()"
+              autocomplete="off"
+            />
+            <div id="tournamentSearchDropdown" class="tourney-search-dropdown hidden"></div>
+          </div>
           <div class="tourney-dropdown-wrap">
             <select id="tournamentSelectBox" onchange="onTournamentSelectChange()">
               <option value="">Loading tournaments...</option>

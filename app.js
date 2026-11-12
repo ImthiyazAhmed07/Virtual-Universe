@@ -1633,7 +1633,12 @@ async function loadTournaments() {
     }
 
     if (state.activeTournamentId) {
-      selectBox.value = state.activeTournamentId;
+      if (selectBox) selectBox.value = state.activeTournamentId;
+      const found = state.tournamentsList.find(t => t.id === state.activeTournamentId);
+      const searchInput = document.getElementById("tournamentSearchInput");
+      if (searchInput && found) {
+        searchInput.value = found.name;
+      }
       loadTournamentDetails(state.activeTournamentId);
     }
   } catch (err) {
@@ -1653,15 +1658,23 @@ function filterTournamentList(cat) {
 
   // If active tournament is not in filtered list, select first available
   const selectBox = document.getElementById("tournamentSelectBox");
-  if (selectBox.options.length > 0) {
-    state.activeTournamentId = selectBox.options[0].value;
-    selectBox.value = state.activeTournamentId;
-    loadTournamentDetails(state.activeTournamentId);
+  if (selectBox && selectBox.options.length > 0 && selectBox.options[0].value) {
+    const isStillPresent = state.tournamentsList.some(t => t.id === state.activeTournamentId && (cat === "all" || t.category === cat));
+    if (!isStillPresent) {
+      state.activeTournamentId = selectBox.options[0].value;
+      selectBox.value = state.activeTournamentId;
+      const found = state.tournamentsList.find(t => t.id === state.activeTournamentId);
+      const searchInput = document.getElementById("tournamentSearchInput");
+      if (searchInput && found) searchInput.value = found.name;
+      loadTournamentDetails(state.activeTournamentId);
+    }
   }
 }
 
 function renderTournamentDropdownOptions() {
   const selectBox = document.getElementById("tournamentSelectBox");
+  if (!selectBox) return;
+
   const filtered = state.tournamentsFilterCat === "all"
     ? state.tournamentsList
     : state.tournamentsList.filter(t => t.category === state.tournamentsFilterCat);
@@ -1680,11 +1693,80 @@ function renderTournamentDropdownOptions() {
 
 function onTournamentSelectChange() {
   const selectBox = document.getElementById("tournamentSelectBox");
-  state.activeTournamentId = selectBox.value;
-  if (state.activeTournamentId) {
-    loadTournamentDetails(state.activeTournamentId);
+  if (!selectBox) return;
+  const tourneyId = selectBox.value;
+  if (tourneyId) {
+    selectTournament(tourneyId);
   }
 }
+
+function onTournamentSearchInput(query) {
+  const dropdown = document.getElementById("tournamentSearchDropdown");
+  const q = String(query || "").trim().toLowerCase();
+
+  if (!dropdown) return;
+
+  let matches = state.tournamentsList;
+  if (state.tournamentsFilterCat !== "all") {
+    matches = matches.filter(t => t.category === state.tournamentsFilterCat);
+  }
+
+  if (q) {
+    matches = matches.filter(t =>
+      (t.name && t.name.toLowerCase().includes(q)) ||
+      (t.id && t.id.toLowerCase().includes(q)) ||
+      (t.category && t.category.toLowerCase().includes(q))
+    );
+  }
+
+  if (matches.length === 0) {
+    dropdown.innerHTML = `<div style="padding: 12px 14px; color: var(--text-muted); font-size: 12px; text-align: center;">No tournaments found matching "${escapeHtml(q)}"</div>`;
+    dropdown.classList.remove("hidden");
+    return;
+  }
+
+  dropdown.innerHTML = matches.slice(0, 15).map(t => `
+    <div class="tourney-search-item ${t.id === state.activeTournamentId ? 'active' : ''}" onclick="selectTournament('${t.id}')">
+      <div class="tourney-search-item-info">
+        <span class="tourney-search-item-title">${t.name}</span>
+        <span class="tourney-search-item-sub">${(t.category || "").replace(/_/g, " ").toUpperCase()} • Season ${t.season || 1} • ${t.matchesCount || 0} Matches</span>
+      </div>
+      <span class="tourney-search-item-badge">${t.id}</span>
+    </div>
+  `).join("");
+  dropdown.classList.remove("hidden");
+}
+
+function onTournamentSearchFocus() {
+  const input = document.getElementById("tournamentSearchInput");
+  onTournamentSearchInput(input ? input.value : "");
+}
+
+function selectTournament(tourneyId) {
+  const dropdown = document.getElementById("tournamentSearchDropdown");
+  if (dropdown) dropdown.classList.add("hidden");
+
+  state.activeTournamentId = tourneyId;
+  const selectBox = document.getElementById("tournamentSelectBox");
+  if (selectBox) selectBox.value = tourneyId;
+
+  const found = state.tournamentsList.find(t => t.id === tourneyId);
+  const input = document.getElementById("tournamentSearchInput");
+  if (input && found) {
+    input.value = found.name;
+  }
+
+  loadTournamentDetails(tourneyId);
+}
+
+// Global click-outside listener to hide tournament search dropdown
+document.addEventListener("click", (e) => {
+  const searchWrap = document.querySelector(".tourney-search-wrap");
+  const dropdown = document.getElementById("tournamentSearchDropdown");
+  if (dropdown && searchWrap && !searchWrap.contains(e.target)) {
+    dropdown.classList.add("hidden");
+  }
+});
 
 async function loadTournamentDetails(tourneyId) {
   const container = document.getElementById("tourneySubViewContainer");
@@ -1704,6 +1786,12 @@ async function loadTournamentDetails(tourneyId) {
 
     state.activeTournamentData = data;
     metaBadge.textContent = `${(data.tournament.type || "cricket").toUpperCase()} • ${data.matchesCount || 0} MATCHES PLAYED`;
+
+    const found = state.tournamentsList.find(t => t.id === tourneyId);
+    const searchInput = document.getElementById("tournamentSearchInput");
+    if (searchInput && found && searchInput.value !== found.name) {
+      searchInput.value = found.name;
+    }
 
     // Smart default for active stage: if super stage exists and has played matches, default to stage2, else stage1
     if (data.hasSuperStage) {
@@ -1880,7 +1968,7 @@ function renderTourneySubView() {
 
     container.innerHTML = html;
   } else if (view === "leaders") {
-    // 2. Leaders View (Top Batters & Top Bowlers with Matches Played)
+    // 2. Leaders View (Top Batters & Top Bowlers with Matches Played & Averages)
     const batters = data.topBatters || [];
     const bowlers = data.topBowlers || [];
 
@@ -1898,6 +1986,7 @@ function renderTourneySubView() {
                   <th>Batter</th>
                   <th style="text-align: right;">Mat</th>
                   <th style="text-align: right;">Runs</th>
+                  <th style="text-align: right; color: var(--accent-green);">Avg</th>
                   <th style="text-align: right;">100s/50s</th>
                   <th style="text-align: right;">SR</th>
                 </tr>
@@ -1909,10 +1998,11 @@ function renderTourneySubView() {
                     <td style="font-weight: 600; color: #fff;">${b.name}</td>
                     <td style="text-align: right; color: var(--text-muted); font-family: var(--font-mono);">${b.matches || 0}</td>
                     <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${b.runs}</td>
+                    <td style="text-align: right; font-weight: 600; color: var(--accent-green); font-family: var(--font-mono);">${b.average || b.battingAvg || "-"}</td>
                     <td style="text-align: right; color: var(--text-muted);">${b.hundreds} / ${b.fifties}</td>
                     <td style="text-align: right; font-family: var(--font-mono);">${b.strikeRate}</td>
                   </tr>
-                `).join("") : '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No batting stats recorded yet.</td></tr>'}
+                `).join("") : '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">No batting stats recorded yet.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1930,6 +2020,7 @@ function renderTourneySubView() {
                   <th>Bowler</th>
                   <th style="text-align: right;">Mat</th>
                   <th style="text-align: right;">Wkts</th>
+                  <th style="text-align: right; color: var(--accent-cyan);">Avg</th>
                   <th style="text-align: right;">Overs</th>
                   <th style="text-align: right;">Econ</th>
                 </tr>
@@ -1941,10 +2032,11 @@ function renderTourneySubView() {
                     <td style="font-weight: 600; color: #fff;">${w.name}</td>
                     <td style="text-align: right; color: var(--text-muted); font-family: var(--font-mono);">${w.matches || 0}</td>
                     <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${w.wickets}</td>
+                    <td style="text-align: right; font-weight: 600; color: var(--accent-cyan); font-family: var(--font-mono);">${w.average || w.bowlingAvg || "-"}</td>
                     <td style="text-align: right; color: var(--text-muted);">${formatCricketOvers(w.overs)}</td>
                     <td style="text-align: right; font-family: var(--font-mono);">${w.economy}</td>
                   </tr>
-                `).join("") : '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No bowling stats recorded yet.</td></tr>'}
+                `).join("") : '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">No bowling stats recorded yet.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1952,25 +2044,49 @@ function renderTourneySubView() {
       </div>
     `;
   } else if (view === "teams") {
-    // 3. Participating Teams View
-    const standings = data.standings || [];
-    if (standings.length === 0) {
+    // 3. Participating Teams View with comprehensive Win/Loss records across all completed matches
+    const teams = (data.participatingTeams && data.participatingTeams.length > 0)
+      ? data.participatingTeams
+      : (data.standings || []);
+
+    if (teams.length === 0) {
       container.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--text-muted);">No participating teams found.</div>`;
       return;
     }
 
     container.innerHTML = `
       <div class="teams-showcase-grid">
-        ${standings.map(t => {
-          const winPct = t.played > 0 ? Math.round((t.won / t.played) * 100) : 0;
+        ${teams.map(t => {
+          const played = t.played || 0;
+          const won = t.won || 0;
+          const lost = t.lost || 0;
+          const draws = t.draws || t.draw || 0;
+          const tied = t.tied || 0;
+          const noResult = t.noResult || 0;
+          const winPct = played > 0 ? Math.round((won / played) * 100) : 0;
+          const lossPct = played > 0 ? Math.round((lost / played) * 100) : 0;
+
+          let recordExtra = "";
+          if (draws > 0) recordExtra += ` • <span style="color: var(--accent-gold); font-weight: 600;">${draws}D</span>`;
+          if (tied > 0) recordExtra += ` • <span style="color: var(--accent-cyan); font-weight: 600;">${tied}T</span>`;
+          if (noResult > 0) recordExtra += ` • <span style="color: var(--text-muted);">${noResult}NR</span>`;
+
           return `
             <div class="team-showcase-card">
               <div class="team-card-shield">${(t.name || t.teamName || "").slice(0, 3).toUpperCase()}</div>
               <div class="team-card-info" style="flex: 1;">
-                <div class="team-card-name">${t.name || t.teamName}</div>
-                <div class="team-card-record">${t.won} Wins / ${t.played} Played • ${winPct}% Win Rate</div>
-                <div style="margin-top: 6px; height: 4px; background: rgba(255,255,255,0.06); border-radius: var(--radius-full); overflow: hidden;">
-                  <div style="height: 100%; width: ${winPct}%; background: linear-gradient(90deg, var(--accent-gold), var(--accent-crimson));"></div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span class="team-card-name">${t.name || t.teamName}</span>
+                  <span style="font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: var(--accent-gold);">${t.points || 0} PTS</span>
+                </div>
+                <div class="team-card-record">
+                  <span style="color: var(--accent-green); font-weight: 700;">${won}W</span> - <span style="color: var(--accent-crimson); font-weight: 700;">${lost}L</span>
+                  <span style="color: var(--text-muted);"> (${played} Mat)</span>${recordExtra}
+                  • <strong style="color: #fff;">${winPct}%</strong> Win Rate
+                </div>
+                <div style="margin-top: 8px; height: 6px; background: rgba(255,255,255,0.06); border-radius: var(--radius-full); overflow: hidden; display: flex;">
+                  <div style="height: 100%; width: ${winPct}%; background: var(--accent-green); transition: width 0.3s ease;" title="${won} Wins"></div>
+                  <div style="height: 100%; width: ${lossPct}%; background: var(--accent-crimson); transition: width 0.3s ease;" title="${lost} Losses"></div>
                 </div>
               </div>
             </div>

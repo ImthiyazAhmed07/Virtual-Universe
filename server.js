@@ -312,7 +312,8 @@ async function computeTournamentStandingsData(tourneyId) {
     ORDER BY COALESCE(m.completed_at, m.created_at) ASC, m.id ASC
   `, [cleanId]);
 
-  const completedMatches = matchesRes.rows;
+  // Deduplicate matches by m.id to ensure accuracy
+  const completedMatches = Array.from(new Map(matchesRes.rows.map((m) => [m.id, m])).values());
 
   if (completedMatches.length === 0) {
     // Fallback to teams table
@@ -1301,14 +1302,94 @@ app.get("/api/players/compare", async (req, res) => {
     const s1 = getStats(player1);
     const s2 = getStats(player2);
 
-    let verdict = `${player1.name} and ${player2.name} are evenly matched.`;
-    if (player1.overall_rating > player2.overall_rating + 1) {
-      verdict = `${player1.name} leads overall with higher ratings (${player1.overall_rating} OVR vs ${player2.overall_rating} OVR).`;
-    } else if (player2.overall_rating > player1.overall_rating + 1) {
-      verdict = `${player2.name} leads overall with higher ratings (${player2.overall_rating} OVR vs ${player1.overall_rating} OVR).`;
-    }
-
     const formatLabel = format === "short" ? "Short Formats (T20/T10)" : format === "odi" ? "ODI (50-Over)" : format === "test" ? "Test Matches" : "All Formats Combined";
+
+    // Intelligent format- & role-aware cricket verdict
+    const generateComparisonVerdict = (p1, p2, st1, st2, fmtLabel) => {
+      const p1Bat = Number(p1.batting_rating) || 0;
+      const p2Bat = Number(p2.batting_rating) || 0;
+      const p1Bowl = Number(p1.bowling_rating) || 0;
+      const p2Bowl = Number(p2.bowling_rating) || 0;
+      const p1Ovr = Number(p1.overall_rating) || 0;
+      const p2Ovr = Number(p2.overall_rating) || 0;
+
+      const p1Runs = Number(st1.runs) || 0;
+      const p2Runs = Number(st2.runs) || 0;
+      const p1Avg = parseFloat(st1.battingAvg) || 0;
+      const p2Avg = parseFloat(st2.battingAvg) || 0;
+
+      const p1Wkts = Number(st1.wickets) || 0;
+      const p2Wkts = Number(st2.wickets) || 0;
+      const p1Econ = parseFloat(st1.economy) || 0;
+      const p2Econ = parseFloat(st2.economy) || 0;
+
+      const isP1Batter = p1Bat >= p1Bowl + 8;
+      const isP2Batter = p2Bat >= p2Bowl + 8;
+      const isP1Bowler = p1Bowl >= p1Bat + 8;
+      const isP2Bowler = p2Bowl >= p2Bat + 8;
+
+      // 1. Pure Batter vs Pure Bowler
+      if ((isP1Batter && isP2Bowler) || (isP1Bowler && isP2Batter)) {
+        const batP = isP1Batter ? p1 : p2;
+        const batS = isP1Batter ? st1 : st2;
+        const batR = isP1Batter ? p1Bat : p2Bat;
+        const bowlP = isP1Bowler ? p1 : p2;
+        const bowlS = isP1Bowler ? st1 : st2;
+        const bowlR = isP1Bowler ? p1Bowl : p2Bowl;
+        return `Contrasting Masterclasses — ${batP.name} commands the batting department (${batR} BAT, ${batS.runs.toLocaleString()} runs @ ${batS.battingAvg} avg), while ${bowlP.name} dominates with the ball (${bowlR} BOWL, ${bowlS.wickets} wkts @ ${bowlS.economy} econ).`;
+      }
+
+      // 2. Both primarily Batters
+      if (isP1Batter && isP2Batter) {
+        if (p1Bat >= p2Bat + 3 || (p1Bat >= p2Bat && p1Runs > p2Runs * 1.25)) {
+          const edge = p1Avg > p2Avg && p1Avg > 0 ? `higher average (${st1.battingAvg} vs ${st2.battingAvg})` : `greater run volume (${st1.runs.toLocaleString()} vs ${st2.runs.toLocaleString()})`;
+          return `${p1.name} holds the definitive batting edge in ${fmtLabel} (${p1Bat} vs ${p2Bat} BAT) with ${edge}.`;
+        }
+        if (p2Bat >= p1Bat + 3 || (p2Bat >= p1Bat && p2Runs > p1Runs * 1.25)) {
+          const edge = p2Avg > p1Avg && p2Avg > 0 ? `higher average (${st2.battingAvg} vs ${st1.battingAvg})` : `greater run volume (${st2.runs.toLocaleString()} vs ${st1.runs.toLocaleString()})`;
+          return `${p2.name} holds the definitive batting edge in ${fmtLabel} (${p2Bat} vs ${p1Bat} BAT) with ${edge}.`;
+        }
+        if (Math.abs(p1Bat - p2Bat) <= 2) {
+          if (p1Runs > p2Runs && p2Avg > p1Avg) {
+            return `Close batting rivalry — ${p1.name} leads in career volume (${st1.runs.toLocaleString()} runs), while ${p2.name} holds higher consistency (${st2.battingAvg} avg).`;
+          }
+          if (p2Runs > p1Runs && p1Avg > p2Avg) {
+            return `Close batting rivalry — ${p2.name} leads in career volume (${st2.runs.toLocaleString()} runs), while ${p1.name} holds higher consistency (${st1.battingAvg} avg).`;
+          }
+          return `${p1.name} and ${p2.name} are evenly matched run-scorers (${p1Bat} vs ${p2Bat} BAT) in ${fmtLabel}.`;
+        }
+      }
+
+      // 3. Both primarily Bowlers
+      if (isP1Bowler && isP2Bowler) {
+        if (p1Bowl >= p2Bowl + 3 || (p1Bowl >= p2Bowl && p1Wkts > p2Wkts * 1.25)) {
+          const edge = p1Econ > 0 && p1Econ < p2Econ ? `stingier economy (${st1.economy} vs ${st2.economy})` : `higher wicket tally (${st1.wickets} vs ${st2.wickets})`;
+          return `${p1.name} commands the bowling duel in ${fmtLabel} (${p1Bowl} vs ${p2Bowl} BOWL) with ${edge}.`;
+        }
+        if (p2Bowl >= p1Bowl + 3 || (p2Bowl >= p1Bowl && p2Wkts > p1Wkts * 1.25)) {
+          const edge = p2Econ > 0 && p2Econ < p1Econ ? `stingier economy (${st2.economy} vs ${st1.economy})` : `higher wicket tally (${st2.wickets} vs ${st1.wickets})`;
+          return `${p2.name} commands the bowling duel in ${fmtLabel} (${p2Bowl} vs ${p1Bowl} BOWL) with ${edge}.`;
+        }
+        if (Math.abs(p1Bowl - p2Bowl) <= 2) {
+          return `Intense bowling showdown — ${p1.name} (${st1.wickets} wkts, ${st1.economy} econ) and ${p2.name} (${st2.wickets} wkts, ${st2.economy} econ) share near-identical strike power.`;
+        }
+      }
+
+      // 4. All-Rounder / General Overall Advantage
+      if (p1Ovr > p2Ovr + 2) {
+        const primaryWeapon = p1Bat > p2Bat ? "batting versatility" : "bowling control";
+        return `${p1.name} claims the overall edge (${p1Ovr} vs ${p2Ovr} OVR), bolstered by stronger ${primaryWeapon}.`;
+      }
+      if (p2Ovr > p1Ovr + 2) {
+        const primaryWeapon = p2Bat > p1Bat ? "batting versatility" : "bowling control";
+        return `${p2.name} claims the overall edge (${p2Ovr} vs ${p1Ovr} OVR), bolstered by stronger ${primaryWeapon}.`;
+      }
+
+      // 5. Evenly matched
+      return `Evenly Matched Contenders — ${p1.name} (${p1Ovr} OVR) and ${p2.name} (${p2Ovr} OVR) share equal prestige in ${fmtLabel}.`;
+    };
+
+    const verdict = generateComparisonVerdict(player1, player2, s1, s2, formatLabel);
 
     res.json({
       success: true,
@@ -2086,7 +2167,7 @@ app.get("/api/tournaments", async (req, res) => {
   try {
     const tourneysRes = await query("SELECT * FROM tournaments ORDER BY name ASC");
     const countsRes = await query(`
-      SELECT tm.tournament_id, count(m.id) as count
+      SELECT tm.tournament_id, count(DISTINCT m.id) as count
       FROM tournament_matches tm
       JOIN matches m ON m.id = tm.match_id
       WHERE m.status = 'completed'
@@ -2150,9 +2231,9 @@ app.get("/api/tournaments/:id", async (req, res) => {
     // Compute Standings with groups and stages
     const standingsData = await computeTournamentStandingsData(tourneyId);
 
-    // Total completed tournament matches count
+    // Total completed tournament matches count (distinct match IDs)
     const countRes = await query(`
-      SELECT count(*) as count
+      SELECT count(DISTINCT m.id) as count
       FROM tournament_matches tm
       JOIN matches m ON m.id = tm.match_id
       WHERE UPPER(tm.tournament_id) = $1 AND m.status = 'completed'
@@ -2174,7 +2255,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
 
     const tType = tourney ? tourney.type : "short";
 
-    // Format-Aware Top Batters
+    // Format-Aware Top Batters with dismissals & average
     const topBattersRes = await query(`
       SELECT tps.player_id, tps.player_name,
              CASE 
@@ -2187,6 +2268,11 @@ app.get("/api/tournaments/:id", async (req, res) => {
                WHEN $1 = 'odi' THEN GREATEST(COALESCE(tps.odi_innings, 0), COALESCE(tps.innings, 0))
                ELSE GREATEST(COALESCE(tps.innings, 0), COALESCE(tps.odi_innings, 0), COALESCE(tps.test_innings, 0))
              END as innings,
+             CASE 
+               WHEN $1 = 'test_match' THEN GREATEST(0, COALESCE(tps.test_innings, 0) - COALESCE(tps.test_not_outs, 0))
+               WHEN $1 = 'odi' THEN GREATEST(0, COALESCE(tps.odi_innings, 0) - COALESCE(tps.odi_not_outs, 0))
+               ELSE GREATEST(0, COALESCE(tps.dismissals, 0))
+             END as dismissals,
              CASE 
                WHEN $1 = 'test_match' THEN COALESCE(tps.test_runs, tps.runs, 0)
                WHEN $1 = 'odi' THEN COALESCE(tps.odi_runs, tps.runs, 0)
@@ -2213,7 +2299,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
       LIMIT 15
     `, [tType, tourneyId.toUpperCase()]);
 
-    // Format-Aware Top Bowlers
+    // Format-Aware Top Bowlers with average
     const topBowlersRes = await query(`
       SELECT tps.player_id, tps.player_name,
              CASE 
@@ -2245,6 +2331,8 @@ app.get("/api/tournaments/:id", async (req, res) => {
     const formattedBatters = topBattersRes.rows.map((b, idx) => {
       const runs = Number(b.runs) || 0;
       const balls = Number(b.balls_faced) || 0;
+      const dismissals = Number(b.dismissals) || 0;
+      const avgStr = dismissals > 0 ? (runs / dismissals).toFixed(2) : (runs > 0 ? `${runs}.00*` : "-");
       return {
         rank: idx + 1,
         id: b.player_id,
@@ -2252,6 +2340,8 @@ app.get("/api/tournaments/:id", async (req, res) => {
         matches: Number(b.matches) || 0,
         runs,
         balls,
+        average: avgStr,
+        battingAvg: avgStr,
         hundreds: Number(b.hundreds) || 0,
         fifties: Number(b.fifties) || 0,
         strikeRate: balls > 0 ? ((runs / balls) * 100).toFixed(1) : "0.0",
@@ -2263,6 +2353,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
       const balls = Number(w.balls_bowled) || 0;
       const runs = Number(w.runs_conceded) || 0;
       const oversNum = balls / 6;
+      const bowlAvgStr = wickets > 0 ? (runs / wickets).toFixed(2) : "-";
       return {
         rank: idx + 1,
         id: w.player_id,
@@ -2271,9 +2362,74 @@ app.get("/api/tournaments/:id", async (req, res) => {
         wickets,
         overs: formatCricketOvers(null, balls),
         runs,
+        average: bowlAvgStr,
+        bowlingAvg: bowlAvgStr,
         economy: oversNum > 0 ? (runs / oversNum).toFixed(2) : "0.00",
       };
     });
+
+    // Compute true tournament participating teams and win/loss records across all completed matches
+    const allTourneyMatchesRes = await query(`
+      SELECT DISTINCT ON (m.id) m.id, m.team_a_id, m.team_b_id, m.team_a_name, m.team_b_name,
+             m.winner_team_id, m.winner_team_name, m.result_description
+      FROM tournament_matches tm
+      JOIN matches m ON m.id = tm.match_id
+      WHERE UPPER(tm.tournament_id) = $1 AND m.status = 'completed'
+      ORDER BY m.id ASC
+    `, [tourneyId.toUpperCase()]);
+
+    const isTestTourney = Boolean(tourney?.type === "test_match");
+    const teamRecordMap = new Map();
+    for (const m of allTourneyMatchesRes.rows) {
+      if (!teamRecordMap.has(m.team_a_id)) {
+        teamRecordMap.set(m.team_a_id, {
+          id: m.team_a_id,
+          name: m.team_a_name.replace(/\s+/g, " ").trim(),
+          played: 0, won: 0, lost: 0, tied: 0, draws: 0, noResult: 0, points: 0,
+        });
+      }
+      if (!teamRecordMap.has(m.team_b_id)) {
+        teamRecordMap.set(m.team_b_id, {
+          id: m.team_b_id,
+          name: m.team_b_name.replace(/\s+/g, " ").trim(),
+          played: 0, won: 0, lost: 0, tied: 0, draws: 0, noResult: 0, points: 0,
+        });
+      }
+      const tA = teamRecordMap.get(m.team_a_id);
+      const tB = teamRecordMap.get(m.team_b_id);
+      tA.played++;
+      tB.played++;
+
+      const isTie = /tie/i.test(m.result_description || "") || /tied/i.test(m.winner_team_name || "");
+      const isDraw = /draw/i.test(m.result_description || "") || /draw/i.test(m.winner_team_name || "");
+      const isNoResult = /no result|abandon/i.test(m.result_description || "");
+
+      if (isNoResult) {
+        tA.noResult++; tA.points += 1;
+        tB.noResult++; tB.points += 1;
+      } else if (isTie) {
+        tA.tied++; tA.points += 1;
+        tB.tied++; tB.points += 1;
+      } else if (isDraw && isTestTourney) {
+        tA.draws++; tA.points += 4;
+        tB.draws++; tB.points += 4;
+      } else if (m.winner_team_id === m.team_a_id || (m.winner_team_name && m.winner_team_name.toLowerCase().trim() === m.team_a_name.toLowerCase().trim())) {
+        tA.won++; tA.points += (isTestTourney ? 12 : 2);
+        tB.lost++;
+      } else if (m.winner_team_id === m.team_b_id || (m.winner_team_name && m.winner_team_name.toLowerCase().trim() === m.team_b_name.toLowerCase().trim())) {
+        tB.won++; tB.points += (isTestTourney ? 12 : 2);
+        tA.lost++;
+      }
+    }
+
+    const participatingTeams = Array.from(teamRecordMap.values())
+      .map(t => ({
+        ...t,
+        teamName: t.name,
+        shortName: t.name.slice(0, 4).toUpperCase(),
+        winPct: t.played > 0 ? Math.round((t.won / t.played) * 100) : 0,
+      }))
+      .sort((a, b) => b.won - a.won || b.winPct - a.winPct || b.played - a.played);
 
     const recentMatchesFormatted = tourneyMatches.rows.map((m) => ({
       id: m.id,
@@ -2294,7 +2450,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
       success: true,
       tournament: tourney || { id: tourneyId, name: tourneyId, season: "1", type: "short" },
       matchesCount: totalCompletedMatches,
-      isTest: Boolean(tourney?.type === "test_match"),
+      isTest: isTestTourney,
       hasGroups: standingsData.hasGroups,
       groups: standingsData.groups,
       groupRows: standingsData.groupRows,
@@ -2305,6 +2461,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
       superStageGroupRows: standingsData.superStageGroupRows,
       superStageQualifyCount: 4,
       standings: standingsData.standings,
+      participatingTeams,
       topBatters: formattedBatters,
       topBowlers: formattedBowlers,
       recentMatches: recentMatchesFormatted,

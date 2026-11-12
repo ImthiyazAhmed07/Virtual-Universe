@@ -2191,6 +2191,113 @@ input:checked + .slider:before { transform: translateX(14px); }
   flex-wrap: wrap;
 }
 
+.tourney-search-wrap {
+  position: relative;
+  flex: 1.2;
+  min-width: 280px;
+}
+
+.tourney-search-input {
+  width: 100%;
+  background: rgba(10, 15, 26, 0.95);
+  color: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px 10px 38px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.tourney-search-input:focus {
+  border-color: var(--accent-cyan);
+  outline: none;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+  background: rgba(14, 22, 38, 0.98);
+}
+
+.tourney-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.tourney-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: rgba(13, 20, 36, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+}
+
+.tourney-search-dropdown.hidden {
+  display: none;
+}
+
+.tourney-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s ease;
+}
+
+.tourney-search-item:last-child {
+  border-bottom: none;
+}
+
+.tourney-search-item:hover,
+.tourney-search-item.active {
+  background: rgba(0, 240, 255, 0.12);
+}
+
+.tourney-search-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.tourney-search-item-title {
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tourney-search-item-sub {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tourney-search-item-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: rgba(255, 210, 20, 0.12);
+  color: var(--accent-gold);
+  border: 1px solid rgba(255, 210, 20, 0.25);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
 .tourney-select-label {
   font-family: var(--font-heading);
   font-size: 13px;
