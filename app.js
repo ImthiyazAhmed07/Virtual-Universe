@@ -181,6 +181,58 @@ function formatCricketOvers(val, balls) {
 }
 
 // -----------------------------------------------------------------------------
+// Universal Player Traits Metadata & Formatter
+// -----------------------------------------------------------------------------
+const TRAIT_INFO = {
+  // Fielding traits
+  safeHands: { label: "Safe Hands", icon: "🧤", class: "trait-fielding" },
+  athleticFielder: { label: "Athletic Fielder", icon: "⚡", class: "trait-fielding" },
+  directHitSpecialist: { label: "Direct Hit Specialist", icon: "🎯", class: "trait-fielding" },
+
+  // Mental & Pressure traits
+  bigMatchPlayer: { label: "Big Match Player", icon: "🏆", class: "trait-mental" },
+  clutchPerformer: { label: "Clutch Performer", icon: "🔥", class: "trait-mental" },
+  pressureHandler: { label: "Pressure Handler", icon: "🛡️", class: "trait-mental" },
+  consistent: { label: "Consistent", icon: "📈", class: "trait-mental" },
+  pressureSensitive: { label: "Pressure Sensitive", icon: "⚠️", class: "trait-negative" },
+
+  // Game Situation traits
+  powerplayExpert: { label: "Powerplay Expert", icon: "💥", class: "trait-situation" },
+  middleOversSpecialist: { label: "Middle Overs Specialist", icon: "⏱️", class: "trait-situation" },
+  deathOversExpert: { label: "Death Overs Expert", icon: "☠️", class: "trait-situation" },
+  chaseMaster: { label: "Chase Master", icon: "🏃", class: "trait-situation" },
+
+  // Captaincy & Leadership traits
+  masterTactician: { label: "Master Tactician", icon: "🧠", class: "trait-captain" },
+  aggressiveLeader: { label: "Aggressive Leader", icon: "⚔️", class: "trait-captain" },
+  calmLeader: { label: "Calm Leader", icon: "🧊", class: "trait-captain" },
+  inspirationalCaptain: { label: "Inspirational Captain", icon: "⭐", class: "trait-captain" },
+  defensiveCaptain: { label: "Defensive Captain", icon: "🏰", class: "trait-captain" },
+};
+
+function formatTraitChip(key, showIcon = true) {
+  const info = TRAIT_INFO[key] || {
+    label: key.replace(/([A-Z])/g, " $1").trim(),
+    icon: "🌟",
+    class: "trait-mental",
+  };
+  const iconStr = showIcon && info.icon ? `${info.icon} ` : "";
+  return `<span class="trait-chip ${info.class || ''}">${iconStr}${info.label}</span>`;
+}
+
+function renderDossierTraits(traitsObj) {
+  const activeKeys = Object.entries(traitsObj || {})
+    .filter(([_, val]) => Boolean(val))
+    .map(([k]) => k);
+
+  if (activeKeys.length === 0) {
+    return `<span class="trait-chip-none">Standard Player Attributes (No special or mental traits assigned)</span>`;
+  }
+
+  return activeKeys.map((k) => formatTraitChip(k, true)).join("");
+}
+
+// -----------------------------------------------------------------------------
 // DOM Content Loaded & Initialization
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
@@ -909,10 +961,9 @@ function renderPlayers(players) {
 
   grid.innerHTML = players.map((p) => {
     const formattedArch = (p.archetype || "").replace(/_/g, " ").toUpperCase();
-    const traits = Object.entries(p.traits || {})
-      .filter(([_, val]) => !!val)
-      .map(([k]) => k.replace(/([A-Z])/g, " $1").trim())
-      .slice(0, 3);
+    const activeTraits = Object.entries(p.traits || {})
+      .filter(([_, val]) => Boolean(val))
+      .map(([k]) => k);
 
     return `
       <div class="player-card" onclick="openPlayerModal(${p.id})">
@@ -951,11 +1002,15 @@ function renderPlayers(players) {
           </div>
         </div>
 
-        ${traits.length > 0 ? `
+        ${activeTraits.length > 0 ? `
           <div class="player-traits-row">
-            ${traits.map(t => `<span class="trait-chip">${t}</span>`).join("")}
+            ${activeTraits.map(k => formatTraitChip(k)).join("")}
           </div>
-        ` : ""}
+        ` : `
+          <div class="player-traits-row">
+            <span class="trait-chip-none">No active traits</span>
+          </div>
+        `}
 
         <div style="margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04); display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
           <span>Mat: <strong style="color: #fff;">${p.stats.matches}</strong></span>
@@ -1184,8 +1239,8 @@ function renderComparisonCard(data) {
   const p2Initials = p2.name.split(" ").map(w => w[0]).join("").slice(0, 2);
 
   // Traits arrays
-  const p1Traits = Object.entries(p1.traits || {}).filter(([_, v]) => !!v).map(([k]) => k.replace(/([A-Z])/g, " $1").trim());
-  const p2Traits = Object.entries(p2.traits || {}).filter(([_, v]) => !!v).map(([k]) => k.replace(/([A-Z])/g, " $1").trim());
+  const p1Traits = Object.entries(p1.traits || {}).filter(([_, v]) => Boolean(v)).map(([k]) => k);
+  const p2Traits = Object.entries(p2.traits || {}).filter(([_, v]) => Boolean(v)).map(([k]) => k);
 
   container.innerHTML = `
     <div class="head-to-head-card">
@@ -1245,18 +1300,18 @@ function renderComparisonCard(data) {
         ${renderStatRow("Overs Bowled", formatCricketOvers(p1.stats.oversBowled), formatCricketOvers(p2.stats.oversBowled))}
         ${renderStatRow("Best Figures", p1.stats.bestBowling, p2.stats.bestBowling)}
 
-        <div class="h2h-section-heading" style="margin-top: 24px;">Special Traits & Clutch Ability</div>
+        <div class="h2h-section-heading" style="margin-top: 24px;">Player Traits & Abilities</div>
         <div class="traits-comparison-grid">
           <div class="traits-box">
             <div class="traits-box-title">🌟 ${p1.name}'s Traits</div>
             <div class="trait-list-pills">
-              ${p1Traits.length > 0 ? p1Traits.map(t => `<span class="trait-chip">${t}</span>`).join("") : '<span style="color: var(--text-muted); font-size: 13px;">No special traits assigned</span>'}
+              ${p1Traits.length > 0 ? p1Traits.map(k => formatTraitChip(k)).join("") : '<span style="color: var(--text-muted); font-size: 13px;">No special traits assigned</span>'}
             </div>
           </div>
           <div class="traits-box">
             <div class="traits-box-title">🌟 ${p2.name}'s Traits</div>
             <div class="trait-list-pills">
-              ${p2Traits.length > 0 ? p2Traits.map(t => `<span class="trait-chip">${t}</span>`).join("") : '<span style="color: var(--text-muted); font-size: 13px;">No special traits assigned</span>'}
+              ${p2Traits.length > 0 ? p2Traits.map(k => formatTraitChip(k)).join("") : '<span style="color: var(--text-muted); font-size: 13px;">No special traits assigned</span>'}
             </div>
           </div>
         </div>
@@ -2250,6 +2305,11 @@ async function openPlayerModal(playerId) {
         <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Bowling Rating</span><span class="metric-val">${p.bowlingRating}</span></div>
         <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Fielding Rating</span><span class="metric-val">${p.fieldingRating}</span></div>
         <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Captaincy Rating</span><span class="metric-val">${p.captaincyRating}</span></div>
+      </div>
+
+      <div class="innings-section-title" style="margin-top: 20px;">Player Traits & Characteristics</div>
+      <div class="dossier-traits-container">
+        ${renderDossierTraits(p.traits)}
       </div>
 
       <div class="innings-section-title">Career Statistics Across Formats</div>

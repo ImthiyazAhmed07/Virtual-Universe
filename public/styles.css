@@ -1113,16 +1113,64 @@ input:checked + .slider:before { transform: translateX(14px); }
 
 .player-traits-row {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
+  align-items: center;
+  min-height: 24px;
 }
 .trait-chip {
-  font-size: 10px;
-  padding: 2px 6px;
+  font-size: 10.5px;
+  padding: 2px 7px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 210, 20, 0.1);
-  border: 1px solid rgba(255, 210, 20, 0.25);
+  background: rgba(255, 210, 20, 0.08);
+  border: 1px solid rgba(255, 210, 20, 0.28);
   color: var(--accent-gold);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.trait-chip.trait-fielding {
+  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(0, 240, 255, 0.32);
+  color: var(--accent-cyan);
+}
+.trait-chip.trait-situation {
+  background: rgba(0, 255, 136, 0.08);
+  border-color: rgba(0, 255, 136, 0.32);
+  color: var(--accent-green);
+}
+.trait-chip.trait-mental {
+  background: rgba(255, 210, 20, 0.08);
+  border-color: rgba(255, 210, 20, 0.32);
+  color: var(--accent-gold);
+}
+.trait-chip.trait-captain {
+  background: rgba(176, 38, 255, 0.1);
+  border-color: rgba(176, 38, 255, 0.38);
+  color: #d884ff;
+}
+.trait-chip.trait-negative {
+  background: rgba(255, 42, 95, 0.12);
+  border-color: rgba(255, 42, 95, 0.4);
+  color: var(--accent-crimson);
+}
+.trait-chip-none {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.dossier-traits-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-top: 10px;
+  margin-bottom: 20px;
 }
 
 .pagination-bar {

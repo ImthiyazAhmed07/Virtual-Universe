@@ -193,15 +193,34 @@
           </div>
 
           <div class="custom-select-wrap">
-            <label>Special Trait</label>
+            <label>Player Trait</label>
             <select id="traitSelect" onchange="applyPlayerFilters()">
-              <option value="All">All Traits</option>
-              <option value="pressureHandler">Pressure Handler</option>
-              <option value="clutchPerformer">Clutch Performer</option>
-              <option value="bigMatchPlayer">Big Match Player</option>
-              <option value="chaseMaster">Chase Master</option>
-              <option value="deathOversExpert">Death Overs Expert</option>
-              <option value="consistent">Consistent</option>
+              <option value="All">All Traits (17)</option>
+              <optgroup label="Game Situation">
+                <option value="powerplayExpert">Powerplay Expert</option>
+                <option value="middleOversSpecialist">Middle Overs Specialist</option>
+                <option value="deathOversExpert">Death Overs Expert</option>
+                <option value="chaseMaster">Chase Master</option>
+              </optgroup>
+              <optgroup label="Mental & Pressure">
+                <option value="pressureHandler">Pressure Handler</option>
+                <option value="clutchPerformer">Clutch Performer</option>
+                <option value="bigMatchPlayer">Big Match Player</option>
+                <option value="consistent">Consistent</option>
+                <option value="pressureSensitive">Pressure Sensitive</option>
+              </optgroup>
+              <optgroup label="Fielding & Wicketkeeping">
+                <option value="safeHands">Safe Hands</option>
+                <option value="athleticFielder">Athletic Fielder</option>
+                <option value="directHitSpecialist">Direct Hit Specialist</option>
+              </optgroup>
+              <optgroup label="Captaincy & Leadership">
+                <option value="masterTactician">Master Tactician</option>
+                <option value="aggressiveLeader">Aggressive Leader</option>
+                <option value="calmLeader">Calm Leader</option>
+                <option value="inspirationalCaptain">Inspirational Captain</option>
+                <option value="defensiveCaptain">Defensive Captain</option>
+              </optgroup>
             </select>
           </div>
 

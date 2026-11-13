@@ -81,6 +81,56 @@ function formatCountry(nationality) {
   return nationality.split("|")[0].trim();
 }
 
+function extractPlayerTraits(p) {
+  if (!p) return {};
+  return {
+    // Fielding traits
+    safeHands: Boolean(p.safe_hands),
+    athleticFielder: Boolean(p.athletic_fielder),
+    directHitSpecialist: Boolean(p.direct_hit_specialist),
+
+    // Mental & Pressure traits
+    bigMatchPlayer: Boolean(p.big_match_player),
+    clutchPerformer: Boolean(p.clutch_performer),
+    pressureSensitive: Boolean(p.pressure_sensitive),
+    pressureHandler: Boolean(p.pressure_handler),
+    consistent: Boolean(p.consistent),
+
+    // Game Situation traits
+    powerplayExpert: Boolean(p.powerplay_expert),
+    middleOversSpecialist: Boolean(p.middle_overs_specialist),
+    deathOversExpert: Boolean(p.death_overs_expert),
+    chaseMaster: Boolean(p.chase_master),
+
+    // Captaincy & Leadership traits
+    masterTactician: Boolean(p.master_tactician),
+    aggressiveLeader: Boolean(p.aggressive_leader),
+    calmLeader: Boolean(p.calm_leader),
+    inspirationalCaptain: Boolean(p.inspirational_captain),
+    defensiveCaptain: Boolean(p.defensive_captain),
+  };
+}
+
+const TRAIT_COLUMN_MAP = {
+  safeHands: "safe_hands",
+  athleticFielder: "athletic_fielder",
+  directHitSpecialist: "direct_hit_specialist",
+  bigMatchPlayer: "big_match_player",
+  clutchPerformer: "clutch_performer",
+  pressureSensitive: "pressure_sensitive",
+  pressureHandler: "pressure_handler",
+  consistent: "consistent",
+  powerplayExpert: "powerplay_expert",
+  middleOversSpecialist: "middle_overs_specialist",
+  deathOversExpert: "death_overs_expert",
+  chaseMaster: "chase_master",
+  masterTactician: "master_tactician",
+  aggressiveLeader: "aggressive_leader",
+  calmLeader: "calm_leader",
+  inspirationalCaptain: "inspirational_captain",
+  defensiveCaptain: "defensive_captain",
+};
+
 // -----------------------------------------------------------------------------
 // Tournament Standings Engine (Groups & Super Stages)
 // -----------------------------------------------------------------------------
@@ -1256,13 +1306,8 @@ app.get("/api/players", async (req, res) => {
       params.push(`%${bowlingStyle}%`);
       conditions.push(`bowling_style ILIKE $${params.length}`);
     }
-    if (trait && trait !== "All") {
-      if (trait === "pressureHandler") conditions.push("pressure_handler = true");
-      else if (trait === "clutchPerformer") conditions.push("clutch_performer = true");
-      else if (trait === "bigMatchPlayer") conditions.push("big_match_player = true");
-      else if (trait === "chaseMaster") conditions.push("chase_master = true");
-      else if (trait === "deathOversExpert") conditions.push("death_overs_expert = true");
-      else if (trait === "consistent") conditions.push("consistent = true");
+    if (trait && trait !== "All" && TRAIT_COLUMN_MAP[trait]) {
+      conditions.push(`${TRAIT_COLUMN_MAP[trait]} = true`);
     }
     if (ratingTier && ratingTier !== "All") {
       if (ratingTier === "elite") conditions.push("overall_rating >= 80");
@@ -1322,14 +1367,7 @@ app.get("/api/players", async (req, res) => {
       bowlingRating: p.bowling_rating,
       fieldingRating: p.fielding_rating,
       captaincyRating: p.captaincy_rating,
-      traits: {
-        pressureHandler: p.pressure_handler,
-        clutchPerformer: p.clutch_performer,
-        bigMatchPlayer: p.big_match_player,
-        chaseMaster: p.chase_master,
-        deathOversExpert: p.death_overs_expert,
-        consistent: p.consistent,
-      },
+      traits: extractPlayerTraits(p),
       stats: {
         matches: (p.career_matches || 0) + (p.odi_matches || 0) + (p.test_matches || 0),
         runs: (p.career_runs || 0) + (p.odi_runs || 0) + (p.test_runs || 0),
@@ -1568,14 +1606,7 @@ app.get("/api/players/compare", async (req, res) => {
         captaincyRating: player1.captaincy_rating,
         battingStyle: player1.batting_style,
         bowlingStyle: player1.bowling_style,
-        traits: {
-          pressureHandler: player1.pressure_handler,
-          clutchPerformer: player1.clutch_performer,
-          bigMatchPlayer: player1.big_match_player,
-          chaseMaster: player1.chase_master,
-          deathOversExpert: player1.death_overs_expert,
-          consistent: player1.consistent,
-        },
+        traits: extractPlayerTraits(player1),
         stats: s1,
       },
       player2: {
@@ -1590,14 +1621,7 @@ app.get("/api/players/compare", async (req, res) => {
         captaincyRating: player2.captaincy_rating,
         battingStyle: player2.batting_style,
         bowlingStyle: player2.bowling_style,
-        traits: {
-          pressureHandler: player2.pressure_handler,
-          clutchPerformer: player2.clutch_performer,
-          bigMatchPlayer: player2.big_match_player,
-          chaseMaster: player2.chase_master,
-          deathOversExpert: player2.death_overs_expert,
-          consistent: player2.consistent,
-        },
+        traits: extractPlayerTraits(player2),
         stats: s2,
       },
       advantage: {
@@ -1703,14 +1727,7 @@ app.get("/api/players/:id", async (req, res) => {
         bowlingRating: player.bowling_rating,
         fieldingRating: player.fielding_rating,
         captaincyRating: player.captaincy_rating,
-        traits: {
-          pressureHandler: player.pressure_handler,
-          clutchPerformer: player.clutch_performer,
-          bigMatchPlayer: player.big_match_player,
-          chaseMaster: player.chase_master,
-          deathOversExpert: player.death_overs_expert,
-          consistent: player.consistent,
-        },
+        traits: extractPlayerTraits(player),
         careerMatches: player.career_matches,
         careerInnings: player.career_innings,
         careerRuns: player.career_runs,
