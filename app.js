@@ -473,10 +473,15 @@ function renderLiveStreams(matches) {
             <span class="stadium-badge">📍 ${m.pitchType}</span>
             <span class="stadium-badge">⛅ ${m.weather}</span>
           </div>
-          ${discordBtn}
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="action-btn-scorecard-top" onclick="openScorecardModal(${m.matchId || m.id})">
+              📊 Scorecard
+            </button>
+            ${discordBtn}
+          </div>
         </div>
 
-        <div class="match-score-hero">
+        <div class="match-score-hero" onclick="openScorecardModal(${m.matchId || m.id})" style="cursor: pointer;" title="Click to view ongoing scorecard">
           <div class="team-score-block team-a">
             <div class="team-shield">${m.teamA.shortName || m.teamA.name.slice(0, 3)}</div>
             <div class="team-info-box">
@@ -581,16 +586,55 @@ function filterRecentMatches(format) {
 
 function renderRecentMatches(matches) {
   const container = document.getElementById("recentMatchesList");
+
+  let liveMatchesHtml = "";
+  if (state.liveMatches && state.liveMatches.length > 0) {
+    liveMatchesHtml = state.liveMatches.map((lm) => {
+      return `
+        <div class="live-match-banner-card" onclick="openScorecardModal(${lm.matchId || lm.id})" style="cursor: pointer;" title="Click to view ongoing scorecard">
+          <div class="live-banner-left">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+              <span class="live-scorecard-badge">🔴 LIVE MATCH</span>
+              <span style="font-size: 12px; color: var(--text-muted);">${lm.format} • ${lm.stadiumName}</span>
+              <span class="channel-indicator">${lm.discord ? lm.discord.channelName : "#match-stream"}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 16px; font-weight: 700; font-size: 15px; flex-wrap: wrap;">
+              <span>${lm.teamA.name}: <span style="color: var(--accent-cyan);">${lm.teamA.score || lm.score || "Yet to bat"}</span></span>
+              <span style="color: var(--text-muted); font-size: 12px;">vs</span>
+              <span>${lm.teamB.name}: <span style="color: var(--accent-gold);">${lm.teamB.score || "Yet to bat"}</span></span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+              Innings ${lm.currentInnings} in progress • CRR: ${lm.crr}
+            </div>
+          </div>
+          <div class="live-banner-right">
+            <button class="action-btn-scorecard-live" onclick="event.stopPropagation(); openScorecardModal(${lm.matchId || lm.id})">
+              📊 View Ongoing Scorecard ➔
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
   if (!matches || matches.length === 0) {
-    container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: var(--text-muted);">
-        No completed matches found for this filter.
-      </div>
-    `;
+    if (liveMatchesHtml) {
+      container.innerHTML = liveMatchesHtml + `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 24px; color: var(--text-muted);">
+          No completed match archives found for this filter.
+        </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: var(--text-muted);">
+          No completed matches found for this filter.
+        </div>
+      `;
+    }
     return;
   }
 
-  container.innerHTML = matches.map((m) => {
+  const completedHtml = matches.map((m) => {
     const formattedDate = m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, {
       month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
     }) : "Recent";
@@ -626,6 +670,8 @@ function renderRecentMatches(matches) {
       </div>
     `;
   }).join("");
+
+  container.innerHTML = liveMatchesHtml + completedHtml;
 }
 
 // -----------------------------------------------------------------------------
