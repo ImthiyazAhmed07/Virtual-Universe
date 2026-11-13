@@ -1971,17 +1971,44 @@ app.get("/api/rankings", async (req, res) => {
       let bbiWCol = "career_best_figures_wickets";
       let bbiRCol = "career_best_figures_runs";
       let tourneyCondition = "type = 'short' AND UPPER(id) NOT IN ('INTL', 'T20WC', 'EXH', 'EXH20')";
+      let runsExpr = "COALESCE(tps.runs, 0)";
+      let matchesExpr = "COALESCE(tps.matches, 0)";
+      let hundredsExpr = "COALESCE(tps.hundreds, 0)";
+      let fiftiesExpr = "COALESCE(tps.fifties, 0)";
+      let dismissalsExpr = "COALESCE(tps.dismissals, 0)";
+      let ballsFacedExpr = "COALESCE(tps.balls_faced, 0)";
+      let wicketsExpr = "COALESCE(tps.wickets, 0)";
+      let ballsBowledExpr = "COALESCE(tps.balls_bowled, 0)";
+      let runsConcededExpr = "COALESCE(tps.runs_conceded, 0)";
 
       if (format === "test" || format === "first_class") {
         hsCol = "test_highest_score";
         bbiWCol = "test_best_figures_wickets";
         bbiRCol = "test_best_figures_runs";
         tourneyCondition = "type = 'test_match' AND UPPER(id) NOT IN ('INTLTEST', 'WTC')";
+        runsExpr = "COALESCE(NULLIF(tps.test_runs, 0), tps.runs, 0)";
+        matchesExpr = "COALESCE(NULLIF(tps.test_matches, 0), tps.matches, 0)";
+        hundredsExpr = "COALESCE(NULLIF(tps.test_hundreds, 0), tps.hundreds, 0)";
+        fiftiesExpr = "COALESCE(NULLIF(tps.test_fifties, 0), tps.fifties, 0)";
+        dismissalsExpr = "COALESCE(NULLIF(GREATEST(0, tps.test_innings - tps.test_not_outs), 0), tps.dismissals, 0)";
+        ballsFacedExpr = "COALESCE(NULLIF(tps.test_balls_faced, 0), tps.balls_faced, 0)";
+        wicketsExpr = "COALESCE(NULLIF(tps.test_wickets, 0), tps.wickets, 0)";
+        ballsBowledExpr = "COALESCE(NULLIF(tps.test_balls_bowled, 0), tps.balls_bowled, 0)";
+        runsConcededExpr = "COALESCE(NULLIF(tps.test_runs_conceded, 0), tps.runs_conceded, 0)";
       } else if (format === "odi" || format === "list_a") {
         hsCol = "odi_highest_score";
         bbiWCol = "odi_best_figures_wickets";
         bbiRCol = "odi_best_figures_runs";
         tourneyCondition = "type = 'odi' AND UPPER(id) NOT IN ('INTL50', 'INTL50_S2', 'ODIWC', 'EXH50')";
+        runsExpr = "COALESCE(NULLIF(tps.odi_runs, 0), tps.runs, 0)";
+        matchesExpr = "COALESCE(NULLIF(tps.odi_matches, 0), tps.matches, 0)";
+        hundredsExpr = "COALESCE(NULLIF(tps.odi_hundreds, 0), tps.hundreds, 0)";
+        fiftiesExpr = "COALESCE(NULLIF(tps.odi_fifties, 0), tps.fifties, 0)";
+        dismissalsExpr = "COALESCE(NULLIF(GREATEST(0, tps.odi_innings - tps.odi_not_outs), 0), tps.dismissals, 0)";
+        ballsFacedExpr = "COALESCE(NULLIF(tps.odi_balls_faced, 0), tps.balls_faced, 0)";
+        wicketsExpr = "COALESCE(NULLIF(tps.odi_wickets, 0), tps.wickets, 0)";
+        ballsBowledExpr = "COALESCE(NULLIF(tps.odi_balls_bowled, 0), tps.balls_bowled, 0)";
+        runsConcededExpr = "COALESCE(NULLIF(tps.odi_runs_conceded, 0), tps.runs_conceded, 0)";
       }
 
       const [topBatters, topBowlers, hsRes, bbiRes] = await Promise.all([
@@ -1991,13 +2018,13 @@ app.get("/api/rankings", async (req, res) => {
                  MAX(p.overall_rating) as overall_rating,
                  MAX(p.batting_rating) as batting_rating,
                  MAX(p.bowling_rating) as bowling_rating,
-                 SUM(tps.runs) as runs, 
-                 SUM(tps.matches) as matches,
+                 SUM(${runsExpr}) as runs, 
+                 SUM(${matchesExpr}) as matches,
                  MAX(p.${hsCol}) as highest_score,
-                 SUM(tps.hundreds) as total_hundreds, 
-                 SUM(tps.fifties) as total_fifties,
-                 ROUND(SUM(tps.runs)::numeric / GREATEST(1, SUM(tps.dismissals))::numeric, 2) as batting_avg,
-                 ROUND((SUM(tps.runs)::numeric / GREATEST(1, SUM(tps.balls_faced))::numeric) * 100, 1) as strike_rate
+                 SUM(${hundredsExpr}) as total_hundreds, 
+                 SUM(${fiftiesExpr}) as total_fifties,
+                 ROUND(SUM(${runsExpr})::numeric / GREATEST(1, SUM(${dismissalsExpr}))::numeric, 2) as batting_avg,
+                 ROUND((SUM(${runsExpr})::numeric / GREATEST(1, SUM(${ballsFacedExpr}))::numeric) * 100, 1) as strike_rate
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
           WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
@@ -2011,14 +2038,14 @@ app.get("/api/rankings", async (req, res) => {
                  MAX(p.overall_rating) as overall_rating,
                  MAX(p.batting_rating) as batting_rating,
                  MAX(p.bowling_rating) as bowling_rating,
-                 SUM(tps.wickets) as wickets, 
-                 SUM(tps.matches) as matches,
-                 SUM(tps.balls_bowled) as balls_bowled,
-                 SUM(tps.runs_conceded) as runs_conceded,
+                 SUM(${wicketsExpr}) as wickets, 
+                 SUM(${matchesExpr}) as matches,
+                 SUM(${ballsBowledExpr}) as balls_bowled,
+                 SUM(${runsConcededExpr}) as runs_conceded,
                  MAX(p.${bbiWCol}) as best_wickets,
                  MIN(CASE WHEN p.${bbiRCol} > 0 THEN p.${bbiRCol} ELSE 999 END) as best_runs,
-                 ROUND((SUM(tps.runs_conceded)::numeric / GREATEST(1, SUM(tps.balls_bowled))::numeric) * 6, 2) as economy,
-                 ROUND(SUM(tps.runs_conceded)::numeric / GREATEST(1, SUM(tps.wickets))::numeric, 2) as bowling_avg
+                 ROUND((SUM(${runsConcededExpr})::numeric / GREATEST(1, SUM(${ballsBowledExpr}))::numeric) * 6, 2) as economy,
+                 ROUND(SUM(${runsConcededExpr})::numeric / GREATEST(1, SUM(${wicketsExpr}))::numeric, 2) as bowling_avg
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
           WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
@@ -2032,10 +2059,10 @@ app.get("/api/rankings", async (req, res) => {
                  MAX(p.overall_rating) as overall_rating,
                  MAX(p.batting_rating) as batting_rating,
                  MAX(p.${hsCol}) as score,
-                 SUM(tps.runs) as runs,
-                 SUM(tps.hundreds) as hundreds,
-                 SUM(tps.fifties) as fifties,
-                 SUM(tps.matches) as matches
+                 SUM(${runsExpr}) as runs,
+                 SUM(${hundredsExpr}) as hundreds,
+                 SUM(${fiftiesExpr}) as fifties,
+                 SUM(${matchesExpr}) as matches
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
           WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
@@ -2051,8 +2078,8 @@ app.get("/api/rankings", async (req, res) => {
                  MAX(p.bowling_rating) as bowling_rating,
                  MAX(p.${bbiWCol}) as best_wickets,
                  MIN(CASE WHEN p.${bbiRCol} > 0 THEN p.${bbiRCol} ELSE 999 END) as best_runs,
-                 SUM(tps.wickets) as wickets,
-                 SUM(tps.matches) as matches
+                 SUM(${wicketsExpr}) as wickets,
+                 SUM(${matchesExpr}) as matches
           FROM tournament_player_stats tps
           LEFT JOIN players p ON p.id = tps.player_id
           WHERE UPPER(tps.tournament_id) IN (SELECT UPPER(id) FROM tournaments WHERE ${tourneyCondition})
