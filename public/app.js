@@ -536,6 +536,12 @@ function renderLiveStreams(matches) {
             ${ballChips.length > 0 ? ballChips : '<span style="color: var(--text-muted); font-size: 13px;">New over starting...</span>'}
           </div>
         </div>
+
+        <div class="live-card-actions-bar">
+          <button class="action-btn-scorecard-live" onclick="openScorecardModal(${m.matchId || m.id})">
+            📊 View Ongoing Scorecard ➔
+          </button>
+        </div>
       </div>
     `;
   }).join("");
@@ -642,16 +648,29 @@ async function openScorecardModal(matchId) {
     const m = data.match || {};
     const inns = data.innings || [];
 
+    const isLive = m.status === "live" || m.status === "in_progress";
     const tAName = m.teamAName || m.team_a_name || "Team A";
     const tBName = m.teamBName || m.team_b_name || "Team B";
-    modalTitle.textContent = `${tAName} vs ${tBName} (${(m.format || "").toUpperCase()})`;
+    modalTitle.innerHTML = `
+      <span>${tAName} vs ${tBName} (${(m.format || "").toUpperCase()})</span>
+      ${isLive ? '<span class="live-scorecard-badge" style="margin-left: 10px;">🔴 LIVE ONGOING</span>' : ''}
+    `;
 
     const stadiumDisplay = m.stadiumName || m.stadium_name || "Official Cricket Ground";
     const channelDisplay = m.channelName || m.channel?.name || "#match-stream";
 
     let html = `
-      <div style="background: rgba(0,0,0,0.35); padding: 16px; border-radius: var(--radius-md); border-left: 3px solid var(--accent-gold); margin-bottom: 20px;">
-        <div style="font-size: 16px; font-weight: 700; color: #fff;">${m.resultDescription || m.result_description || "Match Completed"}</div>
+      <div style="background: rgba(0,0,0,0.35); padding: 16px; border-radius: var(--radius-md); border-left: 3px solid ${isLive ? 'var(--accent-crimson)' : 'var(--accent-gold)'}; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div style="font-size: 16px; font-weight: 700; color: #fff;">
+            ${isLive ? '<span style="color: var(--accent-crimson); margin-right: 6px;">●</span>' : ''}${m.resultDescription || m.result_description || "Match Completed"}
+          </div>
+          ${isLive ? `
+            <button onclick="openScorecardModal(${matchId})" class="action-btn-scorecard-live" style="padding: 4px 10px; font-size: 11px;">
+              🔄 Refresh Scorecard
+            </button>
+          ` : ''}
+        </div>
         <div style="font-size: 13px; color: var(--text-muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
           <span>🏟️ Venue: <strong style="color: #fff;">${stadiumDisplay}</strong></span>
           <span>📺 Channel: <strong style="color: var(--accent-gold);">${channelDisplay}</strong></span>
@@ -661,7 +680,15 @@ async function openScorecardModal(matchId) {
 
     for (const inn of inns) {
       const batCard = inn.battingCard || inn.batting_card || [];
-      const bowlCard = inn.bowlingCard || inn.bowling_card || [];
+      const rawBowlCard = inn.bowlingCard || inn.bowling_card || [];
+      // Filter out bowlers who didn't bowl
+      const bowlCard = rawBowlCard.filter((w) => {
+        const overs = Number(w.overs ?? 0);
+        const balls = Number(w.balls ?? w.ballsBowled ?? w.oversBowled ?? 0);
+        const wickets = Number(w.wickets ?? 0);
+        const runs = Number(w.runs ?? w.runsConceded ?? 0);
+        return overs > 0 || balls > 0 || wickets > 0 || runs > 0;
+      });
       const innNumber = inn.inningsNumber ?? inn.innings_number ?? 1;
       const teamTitle = inn.battingTeamName || inn.teamName || (innNumber === 1 ? tAName : tBName) || `Innings ${innNumber}`;
       const runs = inn.totalRuns ?? inn.total_runs ?? 0;
@@ -726,7 +753,7 @@ async function openScorecardModal(matchId) {
                   <td style="text-align: right; font-family: var(--font-mono);">${w.economy ?? (w.overs > 0 ? (w.runs / w.overs).toFixed(2) : "0.00")}</td>
                 </tr>
               `).join("") : `
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Bowling records not recorded</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">No bowling figures recorded</td></tr>
               `}
             </tbody>
           </table>
@@ -1850,13 +1877,25 @@ function renderStandingsTable(rows, title = "", qualifyCount = 4) {
             <th style="text-align: center;">L</th>
             <th style="text-align: center;">D/T</th>
             <th style="text-align: right;">PTS</th>
-            <th style="text-align: right;">NRR/Quot</th>
+            <th style="text-align: right;">${(data.isTestTourney || data.isTest || (data.tournament && data.tournament.type === "test_match")) ? "QUOT" : "NRR"}</th>
             <th style="text-align: center;">Recent Form</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((t, idx) => {
             const isQual = Boolean(t.isQualified !== undefined ? t.isQualified : (idx < qualifyCount));
+            const isTestTourney = Boolean(data.isTestTourney || data.isTest || (data.tournament && data.tournament.type === "test_match"));
+            let rateVal = "0.000";
+            let rateColor = "var(--text-muted)";
+            if (isTestTourney) {
+              const q = typeof t.quotient === "number" ? t.quotient : parseFloat(t.quotient || 1);
+              rateVal = q.toFixed(3);
+              rateColor = "var(--accent-gold)";
+            } else {
+              const n = typeof t.nrr === "number" ? t.nrr : parseFloat(t.nrr || 0);
+              rateVal = n >= 0 ? `+${n.toFixed(3)}` : n.toFixed(3);
+              rateColor = n > 0 ? "var(--accent-green)" : n < 0 ? "var(--accent-crimson)" : "var(--accent-gold)";
+            }
             const formList = Array.isArray(t.form)
               ? t.form
               : String(t.form || "").trim().split(/\s+/).filter(Boolean);
@@ -1881,7 +1920,7 @@ function renderStandingsTable(rows, title = "", qualifyCount = 4) {
                 <td style="text-align: center; color: var(--accent-crimson);">${t.lost}</td>
                 <td style="text-align: center; color: var(--text-muted);">${(t.draws || t.draw || 0) + (t.tied || 0)}</td>
                 <td style="text-align: right;" class="pts-bold">${t.points}</td>
-                <td style="text-align: right; font-family: var(--font-mono); color: var(--accent-gold);">${t.nrr || t.quotient || "0.000"}</td>
+                <td style="text-align: right; font-family: var(--font-mono); font-weight: 700; color: ${rateColor};">${rateVal}</td>
                 <td style="text-align: center;">${formBadges || "-"}</td>
               </tr>
             `;

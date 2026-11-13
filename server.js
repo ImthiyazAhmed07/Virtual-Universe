@@ -84,7 +84,7 @@ function formatCountry(nationality) {
 // -----------------------------------------------------------------------------
 // Tournament Standings Engine (Groups & Super Stages)
 // -----------------------------------------------------------------------------
-function computeStandingsFromMatches(teams, matches, inningsRows, isTest) {
+function computeStandingsFromMatches(teams, matches, inningsRows, isTest, matchFormatMap) {
   const allowedIds = new Set(teams.map((t) => Number(t.id)));
   const allowedNames = new Set(teams.map((t) => t.name.toLowerCase().trim()));
   const isAllowed = (id, name) =>
@@ -98,7 +98,7 @@ function computeStandingsFromMatches(teams, matches, inningsRows, isTest) {
       .filter((m) => !/no result|abandon/i.test(m.result_description || ""))
       .map((m) => m.id)
   );
-  const relevantInnings = inningsRows.filter((inn) => matchIdSet.has(inn.match_id));
+  const relevantInnings = (inningsRows || []).filter((inn) => matchIdSet.has(inn.match_id || inn.matchId));
 
   const statsMap = new Map();
   const getOrInitTeam = (id, name) => {
@@ -166,18 +166,23 @@ function computeStandingsFromMatches(teams, matches, inningsRows, isTest) {
       if (teamA) { teamA.draws++; teamA.points += 4; teamA.form.push("D"); }
       if (teamB) { teamB.draws++; teamB.points += 4; teamB.form.push("D"); }
     } else {
-      const winnerId = m.winner_team_id;
-      const winnerName = (m.winner_team_name || "").toLowerCase().trim();
-
-      const aWon = (winnerId && winnerId === m.team_a_id) || (winnerName && winnerName === (m.team_a_name || "").toLowerCase().trim());
-      const bWon = (winnerId && winnerId === m.team_b_id) || (winnerName && winnerName === (m.team_b_name || "").toLowerCase().trim());
+      let isWinnerA = false;
+      if (m.winner_team_id === m.team_a_id) {
+        isWinnerA = true;
+      } else if (m.winner_team_id === m.team_b_id) {
+        isWinnerA = false;
+      } else {
+        const winnerName = (m.winner_team_name || "").toLowerCase().trim();
+        const aName = (m.team_a_name || "").toLowerCase().trim();
+        isWinnerA = aName === winnerName || winnerName.includes(aName);
+      }
 
       const winPts = isTest ? 12 : 2;
 
-      if (aWon) {
+      if (isWinnerA) {
         if (teamA) { teamA.won++; teamA.points += winPts; teamA.form.push("W"); }
         if (teamB) { teamB.lost++; teamB.form.push("L"); }
-      } else if (bWon) {
+      } else {
         if (teamB) { teamB.won++; teamB.points += winPts; teamB.form.push("W"); }
         if (teamA) { teamA.lost++; teamA.form.push("L"); }
       }
@@ -185,53 +190,76 @@ function computeStandingsFromMatches(teams, matches, inningsRows, isTest) {
   }
 
   // Calculate NRR or Quotient
-  if (isTest) {
-    for (const inn of relevantInnings) {
-      const runs = inn.total_runs || 0;
-      const wkts = inn.total_wickets || 0;
-      let batTeam = statsMap.get(inn.batting_team_id);
-      let bowlTeam = statsMap.get(inn.bowling_team_id);
+  if (relevantInnings.length > 0) {
+    if (isTest) {
+      for (const inn of relevantInnings) {
+        let batTeam = statsMap.get(inn.batting_team_id || inn.battingTeamId);
+        let bowlTeam = statsMap.get(inn.bowling_team_id || inn.bowlingTeamId);
+        if (!batTeam || !bowlTeam) {
+          for (const t of statsMap.values()) {
+            if (t.id === (inn.batting_team_id || inn.battingTeamId)) batTeam = t;
+            if (t.id === (inn.bowling_team_id || inn.bowlingTeamId)) bowlTeam = t;
+          }
+        }
+        if (batTeam && isAllowed(batTeam.id, batTeam.name)) {
+          batTeam.runsScored += inn.total_runs || inn.totalRuns || 0;
+          batTeam.wicketsLost += inn.total_wickets || inn.totalWickets || 0;
+        }
+        if (bowlTeam && isAllowed(bowlTeam.id, bowlTeam.name)) {
+          bowlTeam.runsConceded += inn.total_runs || inn.totalRuns || 0;
+          bowlTeam.wicketsTaken += inn.total_wickets || inn.totalWickets || 0;
+        }
+      }
+      for (const t of statsMap.values()) {
+        const wLost = Math.max(1, t.wicketsLost);
+        const wTaken = Math.max(1, t.wicketsTaken);
+        const batAvg = t.runsScored / wLost;
+        const bowlAvg = t.runsConceded / wTaken;
+        t.quotient = bowlAvg > 0 ? parseFloat((batAvg / bowlAvg).toFixed(3)) : 1.0;
+      }
+    } else {
+      for (const inn of relevantInnings) {
+        const innMatchId = inn.match_id || inn.matchId;
+        const format = (matchFormatMap && matchFormatMap.get(innMatchId)) || "t20";
+        if (format === "test" || format === "test_match") continue;
 
-      if (batTeam && isAllowed(batTeam.id, batTeam.name)) {
-        batTeam.runsScored += runs;
-        batTeam.wicketsLost += wkts;
-      }
-      if (bowlTeam && isAllowed(bowlTeam.id, bowlTeam.name)) {
-        bowlTeam.runsConceded += runs;
-        bowlTeam.wicketsTaken += wkts;
-      }
-    }
-    for (const t of statsMap.values()) {
-      const batAvg = t.wicketsLost > 0 ? t.runsScored / t.wicketsLost : t.runsScored;
-      const bowlAvg = t.wicketsTaken > 0 ? t.runsConceded / t.wicketsTaken : t.runsConceded;
-      t.quotient = bowlAvg > 0 ? parseFloat((batAvg / bowlAvg).toFixed(3)) : 1.0;
-    }
-  } else {
-    for (const inn of relevantInnings) {
-      const maxOvers = 20;
-      const ballsPerOver = 6;
-      let batTeam = statsMap.get(inn.batting_team_id);
-      let bowlTeam = statsMap.get(inn.bowling_team_id);
+        const isHundred = format === "the_hundred";
+        const ballsPerOver = isHundred ? 5.0 : 6.0;
+        let maxOvers = 20.0;
+        if (isHundred) maxOvers = 20.0;
+        else if (format === "odi") maxOvers = 50.0;
+        else if (format === "10_overs") maxOvers = 10.0;
+        else if (format === "5_overs") maxOvers = 5.0;
 
-      const runs = inn.total_runs || 0;
-      const wkts = inn.total_wickets || 0;
-      const balls = inn.total_balls || 0;
-      const oversActual = balls / ballsPerOver;
-      const oversCounted = wkts === 10 ? maxOvers : oversActual;
+        let batTeam = statsMap.get(inn.batting_team_id || inn.battingTeamId);
+        let bowlTeam = statsMap.get(inn.bowling_team_id || inn.bowlingTeamId);
+        if (!batTeam || !bowlTeam) {
+          for (const t of statsMap.values()) {
+            if (t.id === (inn.batting_team_id || inn.battingTeamId)) batTeam = t;
+            if (t.id === (inn.bowling_team_id || inn.bowlingTeamId)) bowlTeam = t;
+          }
+        }
 
-      if (batTeam && isAllowed(batTeam.id, batTeam.name)) {
-        batTeam.runsScored += runs;
-        batTeam.oversFaced += oversCounted;
+        const runs = inn.total_runs || inn.totalRuns || 0;
+        const wkts = inn.total_wickets || inn.totalWickets || 0;
+        const balls = inn.total_balls || inn.totalBalls || 0;
+        const oversActual = balls / ballsPerOver;
+        const oversCounted = wkts === 10 ? maxOvers : oversActual;
+
+        if (batTeam && isAllowed(batTeam.id, batTeam.name)) {
+          batTeam.runsScored += runs;
+          batTeam.oversFaced += oversCounted;
+        }
+        if (bowlTeam && isAllowed(bowlTeam.id, bowlTeam.name)) {
+          bowlTeam.runsConceded += runs;
+          bowlTeam.oversBowled += oversCounted;
+        }
       }
-      if (bowlTeam && isAllowed(bowlTeam.id, bowlTeam.name)) {
-        bowlTeam.runsConceded += runs;
-        bowlTeam.oversBowled += oversCounted;
+      for (const t of statsMap.values()) {
+        const batRate = t.oversFaced > 0 ? t.runsScored / t.oversFaced : 0;
+        const bowlRate = t.oversBowled > 0 ? t.runsConceded / t.oversBowled : 0;
+        t.nrr = parseFloat((batRate - bowlRate).toFixed(3));
       }
-    }
-    for (const t of statsMap.values()) {
-      const batRate = t.oversFaced > 0 ? t.runsScored / t.oversFaced : 0;
-      const bowlRate = t.oversBowled > 0 ? t.runsConceded / t.oversBowled : 0;
-      t.nrr = parseFloat((batRate - bowlRate).toFixed(3));
     }
   }
 
@@ -260,7 +288,7 @@ function computeStandingsFromMatches(teams, matches, inningsRows, isTest) {
       tied: s.tied,
       noResult: s.noResult,
       points: s.points,
-      nrr: typeof s.nrr === "number" ? (s.nrr > 0 ? `+${s.nrr.toFixed(3)}` : s.nrr.toFixed(3)) : (s.nrr || "0.000"),
+      nrr: typeof s.nrr === "number" ? (s.nrr >= 0 ? `+${s.nrr.toFixed(3)}` : s.nrr.toFixed(3)) : (s.nrr || "+0.000"),
       quotient: typeof s.quotient === "number" ? s.quotient.toFixed(3) : (s.quotient || "1.000"),
       form: s.form.join(" ") || "-",
       isQualified: false,
@@ -355,6 +383,8 @@ async function computeTournamentStandingsData(tourneyId) {
     FROM match_innings
     WHERE match_id = ANY($1::int[])
   `, [matchIds]);
+
+  const matchFormatMap = new Map(completedMatches.map((m) => [m.id, m.format || (tourney ? tourney.type : "t20")]));
 
   const teamTotalMatches = new Map();
   for (const m of completedMatches) {
@@ -485,7 +515,7 @@ async function computeTournamentStandingsData(tourneyId) {
       }
     }
 
-    overallRows = computeStandingsFromMatches(allTeams, stage1Matches, inningsRes.rows, isTest);
+    overallRows = computeStandingsFromMatches(allTeams, stage1Matches, inningsRes.rows, isTest, matchFormatMap);
     const defaultQualify = config.qualifyCount ?? 4;
     overallRows.forEach((r, idx) => {
       r.isQualified = idx < defaultQualify;
@@ -497,7 +527,7 @@ async function computeTournamentStandingsData(tourneyId) {
           const assigned = getTeamGroup(t.id, t.name);
           return assigned && assigned.toLowerCase() === grp.toLowerCase();
         });
-        const gRows = computeStandingsFromMatches(teamsInGroup, stage1Matches, inningsRes.rows, isTest);
+        const gRows = computeStandingsFromMatches(teamsInGroup, stage1Matches, inningsRes.rows, isTest, matchFormatMap);
         const gQualify = config.groupQualifyCounts?.[grp] ?? 2;
         gRows.forEach((r, idx) => {
           r.isQualified = idx < gQualify;
@@ -568,7 +598,8 @@ async function computeTournamentStandingsData(tourneyId) {
         superTeams,
         superStageAllMatches,
         inningsRes.rows,
-        isTest
+        isTest,
+        matchFormatMap
       );
 
       const superQualify = config.superStageConfig?.qualifyCount ?? 4;
@@ -587,7 +618,8 @@ async function computeTournamentStandingsData(tourneyId) {
             teamsInSub,
             superStageAllMatches,
             inningsRes.rows,
-            isTest
+            isTest,
+            matchFormatMap
           );
           const subQ = getSuperStageGroupQualifyCount(sGrp);
           subRows.forEach((r, idx) => {
@@ -620,7 +652,7 @@ async function computeTournamentStandingsData(tourneyId) {
       }
     }
 
-    overallRows = computeStandingsFromMatches(allTeams, roundRobinMatches, inningsRes.rows, isTest);
+    overallRows = computeStandingsFromMatches(allTeams, roundRobinMatches, inningsRes.rows, isTest, matchFormatMap);
     const defaultQualify = config.qualifyCount ?? 4;
     overallRows.forEach((r, idx) => {
       r.isQualified = idx < defaultQualify;
@@ -632,7 +664,7 @@ async function computeTournamentStandingsData(tourneyId) {
           const assigned = getTeamGroup(t.id, t.name);
           return assigned && assigned.toLowerCase() === grp.toLowerCase();
         });
-        const gRows = computeStandingsFromMatches(teamsInGroup, roundRobinMatches, inningsRes.rows, isTest);
+        const gRows = computeStandingsFromMatches(teamsInGroup, roundRobinMatches, inningsRes.rows, isTest, matchFormatMap);
         const gQualify = config.groupQualifyCounts?.[grp] ?? 2;
         gRows.forEach((r, idx) => {
           r.isQualified = idx < gQualify;
@@ -980,6 +1012,125 @@ app.get("/api/matches/:id", async (req, res) => {
     const matchId = Number(req.params.id);
     if (!matchId) return res.status(400).json({ success: false, error: "Invalid match ID" });
 
+    // 1. Check active_match_states first for ongoing live match state
+    let liveState = null;
+    try {
+      const activeRes = await query("SELECT state FROM active_match_states WHERE (state->>'matchId')::int = $1 LIMIT 1", [matchId]);
+      if (activeRes.rows.length > 0) {
+        liveState = activeRes.rows[0].state;
+      }
+    } catch (e) {
+      // active_match_states query fallback
+    }
+
+    if (liveState && !liveState.isComplete) {
+      const ms = liveState;
+      const teamAName = ms.teamAName || ms.teamA?.team?.name || "Team A";
+      const teamBName = ms.teamBName || ms.teamB?.team?.name || "Team B";
+      const format = (ms.format || "t20").toLowerCase();
+      const isHundred = format === "the_hundred";
+
+      const rawInns = Array.isArray(ms.innings) ? [...ms.innings] : [];
+      const currentInningsIdx = Number(ms.currentInnings || 0);
+      if (ms.currentInningsState) {
+        rawInns[currentInningsIdx] = ms.currentInningsState;
+      }
+
+      const formattedInnings = [];
+      for (let idx = 0; idx < rawInns.length; idx++) {
+        const inn = rawInns[idx];
+        if (!inn) continue;
+
+        const innNumber = idx + 1;
+        const battingTeamName = inn.teamName || (innNumber === 1 ? teamAName : teamBName);
+
+        const batCard = (inn.batters || [])
+          .filter((b, bIdx) => (b.balls ?? 0) > 0 || b.isOut || bIdx === inn.strikerIndex || bIdx === inn.nonStrikerIndex)
+          .map((b, bIdx) => {
+            let dismissal = b.dismissal || "not out";
+            if (!b.isOut) {
+              if (bIdx === inn.strikerIndex) dismissal = "not out *";
+              else dismissal = "not out";
+            }
+            return {
+              name: b.name || "Batter",
+              runs: Number(b.runs ?? 0),
+              balls: Number(b.balls ?? 0),
+              fours: Number(b.fours ?? 0),
+              sixes: Number(b.sixes ?? 0),
+              dismissal,
+              strikeRate: (b.balls ?? 0) > 0 ? (((b.runs ?? 0) / b.balls) * 100).toFixed(2) : "0.00",
+            };
+          });
+
+        const bowlCard = (inn.bowlers || [])
+          .filter((w) => {
+            const overs = Number(w.overs ?? 0);
+            const balls = Number(w.oversBowled ?? w.balls ?? 0);
+            const wkts = Number(w.wickets ?? 0);
+            const runs = Number(w.runsConceded ?? w.runs ?? 0);
+            return overs > 0 || balls > 0 || wkts > 0 || runs > 0;
+          })
+          .map((w) => {
+            const balls = Number(w.oversBowled ?? w.balls ?? 0);
+            const runs = Number(w.runsConceded ?? w.runs ?? 0);
+            const wkts = Number(w.wickets ?? 0);
+            const oversDisplay = formatCricketOvers(w.overs, balls);
+            const economy = balls > 0 ? (((runs / balls) * (isHundred ? 5 : 6))).toFixed(2) : "0.00";
+            return {
+              name: w.name || w.bowlerName || "Bowler",
+              overs: oversDisplay,
+              maidens: Number(w.maidens ?? 0),
+              runs,
+              wickets: wkts,
+              economy,
+            };
+          });
+
+        formattedInnings.push({
+          inningsNumber: innNumber,
+          teamName: battingTeamName,
+          battingTeamName,
+          totalRuns: Number(inn.totalRuns ?? 0),
+          totalWickets: Number(inn.totalWickets ?? 0),
+          totalBalls: Number(inn.totalBalls ?? 0),
+          overs: formatCricketOvers(null, inn.totalBalls),
+          battingCard: batCard,
+          bowlingCard: bowlCard,
+        });
+      }
+
+      let equationDesc = `Live Match • Innings ${currentInningsIdx + 1} in progress`;
+      if (ms.target && currentInningsIdx >= 1) {
+        const innCurr = ms.currentInningsState || rawInns[currentInningsIdx];
+        const rCurr = Number(innCurr?.totalRuns ?? 0);
+        const needed = Math.max(0, ms.target - rCurr);
+        equationDesc = `⚡ ${ms.battingTeam?.team?.name || "Batting team"} need ${needed} runs to win`;
+      }
+
+      const channelName = await resolveDiscordChannelName(ms.channelId);
+
+      return res.json({
+        success: true,
+        match: {
+          id: ms.matchId,
+          format: (ms.format || "t20").toUpperCase().replace(/_/g, " "),
+          teamAName,
+          teamBName,
+          stadiumName: ms.stadiumName || "Official Cricket Ground",
+          pitchType: ms.pitchType || "balanced",
+          weather: ms.weather || "clear",
+          status: "live",
+          resultDescription: equationDesc,
+          channelName,
+          channelUrl: `https://discord.com/channels/@me/${ms.channelId}`,
+        },
+        innings: formattedInnings,
+        recentDeliveries: [],
+      });
+    }
+
+    // 2. Completed matches lookup from DB
     const matchRes = await query("SELECT * FROM matches WHERE id = $1 LIMIT 1", [matchId]);
     if (matchRes.rows.length === 0) return res.status(404).json({ success: false, error: "Match not found" });
 
@@ -998,15 +1149,24 @@ app.get("/api/matches/:id", async (req, res) => {
         strikeRate: b.strikeRate != null ? b.strikeRate : (b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(2) : "0.00"),
       }));
 
-      const bowlCard = (inn.bowling_card || []).map((w) => ({
-        ...w,
-        name: w.name || w.bowlerName || "Bowler",
-        overs: formatCricketOvers(w.overs, w.balls),
-        maidens: Number(w.maidens ?? 0),
-        runs: Number(w.runs ?? w.runsConceded ?? 0),
-        wickets: Number(w.wickets ?? 0),
-        economy: w.economy != null ? w.economy : (w.overs > 0 ? (w.runs / w.overs).toFixed(2) : "0.00"),
-      }));
+      // Filter out bowlers who didn't bowl (0 overs, 0 balls, 0 wickets, 0 runs)
+      const bowlCard = (inn.bowling_card || [])
+        .filter((w) => {
+          const overs = Number(w.overs ?? 0);
+          const balls = Number(w.balls ?? w.ballsBowled ?? 0);
+          const wickets = Number(w.wickets ?? 0);
+          const runs = Number(w.runs ?? w.runsConceded ?? 0);
+          return overs > 0 || balls > 0 || wickets > 0 || runs > 0;
+        })
+        .map((w) => ({
+          ...w,
+          name: w.name || w.bowlerName || "Bowler",
+          overs: formatCricketOvers(w.overs, w.balls),
+          maidens: Number(w.maidens ?? 0),
+          runs: Number(w.runs ?? w.runsConceded ?? 0),
+          wickets: Number(w.wickets ?? 0),
+          economy: w.economy != null ? w.economy : (w.overs > 0 ? (w.runs / w.overs).toFixed(2) : "0.00"),
+        }));
 
       const battingTeamName = inn.batting_team_id === match.team_a_id
         ? (match.team_a_name || "Team A")
