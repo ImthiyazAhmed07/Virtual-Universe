@@ -13,20 +13,6 @@
   <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 <body>
-  <!-- GitHub Pages Notice Banner (shown only on github.io if API disconnected) -->
-  <div id="ghPagesNoticeBanner" class="gh-pages-banner hidden">
-    <div class="banner-inner container">
-      <div class="banner-text">
-        <span class="banner-icon">📡</span>
-        <span><strong>GitHub Pages Static Mode</strong> — To stream live matches and view player stats from your PostgreSQL database, connect your backend API server (e.g., Render, Railway, VPS, or ngrok).</span>
-      </div>
-      <div class="banner-actions">
-        <button class="banner-btn" onclick="openApiModal()">⚙️ Configure Server URL</button>
-        <button class="banner-close" onclick="document.getElementById('ghPagesNoticeBanner').classList.add('hidden')">✕</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Header / Navigation Bar -->
   <header class="site-header">
     <div class="header-inner container">
@@ -67,10 +53,6 @@
       </nav>
 
       <div class="header-actions">
-        <button id="apiStatusPill" class="api-status-pill" onclick="openApiModal()" title="API Backend Server Connection">
-          <span class="api-dot"></span>
-          <span id="apiStatusLabel">API Server</span>
-        </button>
         <div class="auto-refresh-control" title="Auto-refresh match data every 4 seconds">
           <label class="switch">
             <input type="checkbox" id="autoRefreshToggle" checked>

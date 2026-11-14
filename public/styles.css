@@ -3090,8 +3090,9 @@ input:checked + .slider:before { transform: translateX(14px); }
 }
 
 /* API Status Pill */
-.api-status-pill {
-  display: inline-flex;
+.api-status-pill, .gh-pages-banner {
+  display: none !important;
+}
   align-items: center;
   gap: 7px;
   padding: 5px 12px;

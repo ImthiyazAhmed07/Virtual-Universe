@@ -1555,58 +1555,178 @@ function filterOppMatchupTable(query) {
   if (!table) return;
   const q = (query || "").trim().toLowerCase();
   const rows = table.querySelectorAll("tr");
+  let matchCount = 0;
   rows.forEach(row => {
     const teamCell = row.cells[0];
     const teamText = teamCell ? teamCell.textContent.toLowerCase() : "";
     if (!q || teamText.includes(q)) {
       row.style.display = "";
+      matchCount++;
     } else {
       row.style.display = "none";
     }
   });
+  if (matchCount === 0 && q) {
+    // If no row matched substring, keep all visible
+    rows.forEach(row => { row.style.display = ""; });
+  }
+}
+
+function renderTeamOppositionMatchupResults(data) {
+  const container = document.getElementById("oppMatchupResultsContainer");
+  if (!container || !data) return;
+
+  const teamName = data.teamName || "Selected Team";
+  const matchesCount = data.matchesCount || 0;
+  const topBatters = data.topBatters || [];
+  const topBowlers = data.topBowlers || [];
+  const players = data.players || [];
+
+  container.innerHTML = `
+    <div class="head-to-head-card">
+      <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="color: var(--accent-gold); font-size: 20px;">🛡️</span>
+          <span>Matchup Records & Top Performers vs <strong style="color: var(--accent-gold);">${escapeHtml(teamName)}</strong></span>
+        </div>
+        <span style="font-size: 12px; color: var(--accent-cyan); font-weight: 600; font-family: var(--font-mono);">${matchesCount} Matches Contested</span>
+      </div>
+
+      <!-- Top Performers Highlights Grid -->
+      <div class="vs-matchup-card" style="margin-bottom: 16px;">
+        <div class="vs-subcard">
+          <div class="vs-subcard-title">
+            <span style="color: var(--accent-gold);">🏏 Leading Run Scorers vs ${escapeHtml(teamName)}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+            ${topBatters.length > 0 ? topBatters.map((b, idx) => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); cursor: pointer;" onclick="quickLoadOppMatchup('${escapeHtml(b.name)}')">
+                <span style="font-weight: 600; color: #fff;">#${idx + 1} ${escapeHtml(b.name)}</span>
+                <span style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-gold); font-weight: 700;">
+                  ${b.runs.toLocaleString()} runs <span style="color: var(--text-muted); font-size: 11px;">@ ${b.average} avg (${b.highestScore} HS)</span>
+                </span>
+              </div>
+            `).join("") : '<div style="color: var(--text-muted); font-size: 12px;">No batting records on file against this opposition.</div>'}
+          </div>
+        </div>
+
+        <div class="vs-subcard">
+          <div class="vs-subcard-title">
+            <span style="color: var(--accent-crimson);">🎯 Leading Wicket Takers vs ${escapeHtml(teamName)}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+            ${topBowlers.length > 0 ? topBowlers.map((w, idx) => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); cursor: pointer;" onclick="quickLoadOppMatchup('${escapeHtml(w.name)}')">
+                <span style="font-weight: 600; color: #fff;">#${idx + 1} ${escapeHtml(w.name)}</span>
+                <span style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-crimson); font-weight: 700;">
+                  ${w.wickets} wkts <span style="color: var(--text-muted); font-size: 11px;">@ ${w.economy} econ (${w.bestFigures} BBI)</span>
+                </span>
+              </div>
+            `).join("") : '<div style="color: var(--text-muted); font-size: 12px;">No bowling records on file against this opposition.</div>'}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+        <span>Showing all ${players.length} players who have contested matches against <strong>${escapeHtml(teamName)}</strong>. Click any row to inspect individual player matchup:</span>
+      </div>
+
+      <div style="overflow-x: auto; max-height: 380px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+        <table class="card-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th style="text-align: right;">Mat</th>
+              <th style="text-align: right;">Inn</th>
+              <th style="text-align: right;">Runs</th>
+              <th style="text-align: right;">HS</th>
+              <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
+              <th style="text-align: right;">SR</th>
+              <th style="text-align: right;">100/50</th>
+              <th style="text-align: right;">Wkts</th>
+              <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
+              <th style="text-align: right;">Econ</th>
+              <th style="text-align: right;">BBI</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${players.map(p => `
+              <tr class="clickable-row" onclick="quickLoadOppMatchup('${escapeHtml(p.name)}')">
+                <td style="font-weight: 700; color: #fff;">
+                  <span>🏏</span> <span style="cursor: pointer;">${escapeHtml(p.name)}</span>
+                </td>
+                <td style="text-align: right;">${p.matches}</td>
+                <td style="text-align: right;">${p.batting.innings}</td>
+                <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${p.batting.runs.toLocaleString()}</td>
+                <td style="text-align: right;">${p.batting.highestScore}</td>
+                <td style="text-align: right; font-weight: 600; color: var(--accent-green);">${p.batting.average}</td>
+                <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${p.batting.strikeRate}</td>
+                <td style="text-align: right; color: var(--text-muted);">${p.batting.hundreds}/${p.batting.fifties}</td>
+                <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.bowling.wickets}</td>
+                <td style="text-align: right; font-weight: 600; color: var(--accent-cyan);">${p.bowling.average}</td>
+                <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${p.bowling.economy}</td>
+                <td style="text-align: right; font-weight: 600;">${p.bowling.bestFigures}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 async function loadStandaloneOppMatchup() {
   const playerInput = document.getElementById("oppPlayerInput");
   const teamInput = document.getElementById("oppTeamInput");
-  const playerQuery = playerInput ? playerInput.value.trim() : "";
+  let playerQuery = playerInput ? playerInput.value.trim() : "";
   const teamQuery = teamInput ? teamInput.value.trim() : "";
   const container = document.getElementById("oppMatchupResultsContainer");
 
+  // If both empty, smartly default to star player Matthew Botha
   if (!playerQuery && !teamQuery) {
-    if (container) {
-      container.innerHTML = `
-        <div class="compare-placeholder-card">
-          <div class="placeholder-icon">⚠️</div>
-          <div class="placeholder-title">Please enter a player or team name</div>
-          <div class="placeholder-desc">Type a player name or click one of the quick stars above to view career opposition breakdown.</div>
-        </div>
-      `;
-    }
-    return;
+    playerQuery = "Matthew Botha";
+    if (playerInput) playerInput.value = playerQuery;
   }
 
+  // If only teamQuery is provided, load all player matchups against this team
   if (!playerQuery && teamQuery) {
     if (container) {
       container.innerHTML = `
-        <div class="compare-placeholder-card">
-          <div class="placeholder-icon">🏏</div>
-          <div class="placeholder-title">Select a Star to View Matchups Against ${escapeHtml(teamQuery)}</div>
-          <div class="placeholder-desc">You selected <strong>${escapeHtml(teamQuery)}</strong>. Pick any player above or click a star below to inspect their full record against this opposition:</div>
-          <div class="compare-quick-picks" style="justify-content: center; margin-top: 16px; flex-wrap: wrap; gap: 8px;">
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Matthew Botha')">Matthew Botha</button>
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanay Jain')">Tanay Jain</button>
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Dinuka Perera')">Dinuka Perera</button>
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Ben Whitaker')">Ben Whitaker</button>
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Qais Farahi')">Qais Farahi</button>
-            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanvir Hossain')">Tanvir Hossain</button>
-          </div>
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Retrieving all opponent records and top performers vs ${escapeHtml(teamQuery)}...</p>
         </div>
       `;
+    }
+
+    try {
+      const res = await apiFetch(`/api/matchups/team?name=${encodeURIComponent(teamQuery)}`);
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Failed to load team matchups");
+
+      renderTeamOppositionMatchupResults(data);
+    } catch (err) {
+      if (container) {
+        container.innerHTML = `
+          <div class="compare-placeholder-card">
+            <div class="placeholder-icon">❌</div>
+            <div class="placeholder-title">No Matchups Found for "${escapeHtml(teamQuery)}"</div>
+            <div class="placeholder-desc">${escapeHtml(err.message || "Could not retrieve match records against this team.")}</div>
+            <div class="compare-quick-picks" style="justify-content: center; margin-top: 16px; flex-wrap: wrap; gap: 8px;">
+              <span class="quick-pick-lbl">Or pick a player:</span>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Matthew Botha')">Matthew Botha</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanay Jain')">Tanay Jain</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Dinuka Perera')">Dinuka Perera</button>
+            </div>
+          </div>
+        `;
+      }
     }
     return;
   }
 
+  // Player query is present!
   if (container) {
     container.innerHTML = `
       <div class="loading-state">
@@ -2774,18 +2894,51 @@ function renderVsTeamMatchupCardHtml(vsTeams, selectedTeamName) {
     bowl.average = bowl.wickets > 0 ? (bowl.runs / bowl.wickets).toFixed(2) : "-";
     bowl.bestFigures = "-";
   } else {
-    const found = vsTeams.find(t => t.teamName === selectedTeamName);
+    const q = (selectedTeamName || "").trim().toLowerCase();
+    const found = vsTeams.find(t => t.teamName && t.teamName.toLowerCase() === q)
+               || vsTeams.find(t => t.teamName && t.teamName.toLowerCase().includes(q))
+               || vsTeams.find(t => t.teamName && q.includes(t.teamName.toLowerCase()));
     if (found) {
       headerTitle = `Matchup vs ${found.teamName}`;
       matchesCount = found.matches;
       bat = found.batting;
       bowl = found.bowling;
     } else {
-      headerTitle = `Matchup vs ${selectedTeamName}`;
+      headerTitle = `Career Totals (${vsTeams.length} Opponent Teams Faced)`;
+      for (const t of vsTeams) {
+        matchesCount += t.matches || 0;
+        bat.innings += t.batting.innings || 0;
+        bat.runs += t.batting.runs || 0;
+        bat.balls += t.batting.balls || 0;
+        bat.fours += t.batting.fours || 0;
+        bat.sixes += t.batting.sixes || 0;
+        bat.fifties += t.batting.fifties || 0;
+        bat.hundreds += t.batting.hundreds || 0;
+        if (t.batting.highestScore > bat.highestScore) bat.highestScore = t.batting.highestScore;
+
+        bowl.innings += t.bowling.innings || 0;
+        bowl.balls += t.bowling.balls || 0;
+        bowl.maidens += t.bowling.maidens || 0;
+        bowl.runs += t.bowling.runs || 0;
+        bowl.wickets += t.bowling.wickets || 0;
+      }
+      bat.strikeRate = bat.balls > 0 ? ((bat.runs / bat.balls) * 100).toFixed(1) : "-";
+      bat.average = bat.innings > 0 ? (bat.runs / Math.max(1, bat.innings)).toFixed(2) : "-";
+      bowl.overs = formatCricketOvers(null, bowl.balls);
+      bowl.economy = bowl.balls > 0 ? ((bowl.runs / bowl.balls) * 6).toFixed(2) : "-";
+      bowl.average = bowl.wickets > 0 ? (bowl.runs / bowl.wickets).toFixed(2) : "-";
+      bowl.bestFigures = "-";
     }
   }
 
+  const unrecordedNotice = (!found && selectedTeamName && selectedTeamName !== "ALL")
+    ? `<div style="background: rgba(255, 179, 0, 0.1); border: 1px solid rgba(255, 179, 0, 0.3); border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 10px; font-size: 12px; color: var(--accent-gold);">
+         ℹ️ Player has not contested a match against <strong>${escapeHtml(selectedTeamName)}</strong> yet. Displaying career opposition totals across all ${vsTeams.length} opponents faced below.
+       </div>`
+    : "";
+
   return `
+    ${unrecordedNotice}
     <div style="font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
       <span>${headerTitle}</span>
       <span style="font-size: 12px; color: var(--accent-gold); font-weight: 600;">${matchesCount} Matches Contested</span>

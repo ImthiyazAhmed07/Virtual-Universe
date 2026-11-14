@@ -1769,6 +1769,217 @@ app.get("/api/players/compare", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
+// 5b. Opposition Team Matchup Records (/api/matchups/team)
+// -----------------------------------------------------------------------------
+app.get("/api/matchups/team", async (req, res) => {
+  try {
+    const teamNameQuery = String(req.query.name || "").trim();
+    if (!teamNameQuery) {
+      return res.status(400).json({ success: false, error: "Please provide a team name" });
+    }
+
+    const matchesRes = await query(`
+      SELECT m.id, m.team_a_id, m.team_a_name, m.team_b_id, m.team_b_name, m.format,
+             mi.batting_team_id, mi.bowling_team_id, mi.batting_card, mi.bowling_card
+      FROM matches m
+      JOIN match_innings mi ON mi.match_id = m.id
+      WHERE m.team_a_name ILIKE $1 OR m.team_b_name ILIKE $1
+    `, [`%${teamNameQuery}%`]);
+
+    if (matchesRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: `No match records found for team "${teamNameQuery}"` });
+    }
+
+    // Resolve normalized canonical team name
+    let canonicalTeamName = teamNameQuery;
+    for (const row of matchesRes.rows) {
+      if (row.team_a_name && row.team_a_name.toLowerCase().includes(teamNameQuery.toLowerCase())) {
+        canonicalTeamName = row.team_a_name;
+        break;
+      }
+      if (row.team_b_name && row.team_b_name.toLowerCase().includes(teamNameQuery.toLowerCase())) {
+        canonicalTeamName = row.team_b_name;
+        break;
+      }
+    }
+
+    const batterMap = {};
+    const bowlerMap = {};
+    const matchIds = new Set();
+
+    for (const row of matchesRes.rows) {
+      matchIds.add(row.id);
+
+      const isTargetTeamBatting = (row.team_a_name === canonicalTeamName && row.batting_team_id === row.team_a_id)
+                               || (row.team_b_name === canonicalTeamName && row.batting_team_id === row.team_b_id);
+
+      const isTargetTeamBowling = (row.team_a_name === canonicalTeamName && row.bowling_team_id === row.team_a_id)
+                               || (row.team_b_name === canonicalTeamName && row.bowling_team_id === row.team_b_id);
+
+      const batCard = Array.isArray(row.batting_card) ? row.batting_card : [];
+      const bowlCard = Array.isArray(row.bowling_card) ? row.bowling_card : [];
+
+      // Target team bowling -> opponents batting
+      if (isTargetTeamBowling) {
+        for (const b of batCard) {
+          if (!b.playerId && !b.name) continue;
+          const key = b.playerId ? String(b.playerId) : b.name;
+          if (!batterMap[key]) {
+            batterMap[key] = {
+              id: b.playerId || null,
+              name: b.name || `Player #${b.playerId}`,
+              runs: 0,
+              balls: 0,
+              innings: 0,
+              highScore: 0,
+              fours: 0,
+              sixes: 0,
+              fifties: 0,
+              hundreds: 0,
+              notOuts: 0,
+              matches: new Set(),
+            };
+          }
+          const r = Number(b.runs) || 0;
+          batterMap[key].runs += r;
+          batterMap[key].balls += Number(b.balls) || 0;
+          batterMap[key].innings++;
+          batterMap[key].fours += Number(b.fours) || 0;
+          batterMap[key].sixes += Number(b.sixes) || 0;
+          batterMap[key].matches.add(row.id);
+          if (r > batterMap[key].highScore) batterMap[key].highScore = r;
+          if (r >= 100) batterMap[key].hundreds++;
+          else if (r >= 50) batterMap[key].fifties++;
+          const isOut = b.dismissal && b.dismissal.toLowerCase() !== "not out" && b.dismissal.toLowerCase() !== "retired hurt";
+          if (!isOut) batterMap[key].notOuts++;
+        }
+      }
+
+      // Target team batting -> opponents bowling
+      if (isTargetTeamBatting) {
+        for (const w of bowlCard) {
+          if (!w.playerId && !w.name) continue;
+          const key = w.playerId ? String(w.playerId) : w.name;
+          if (!bowlerMap[key]) {
+            bowlerMap[key] = {
+              id: w.playerId || null,
+              name: w.name || `Player #${w.playerId}`,
+              wickets: 0,
+              runs: 0,
+              balls: 0,
+              innings: 0,
+              maidens: 0,
+              bestW: 0,
+              bestR: 999,
+              matches: new Set(),
+            };
+          }
+          const wk = Number(w.wickets) || 0;
+          const rc = Number(w.runs) || 0;
+          bowlerMap[key].wickets += wk;
+          bowlerMap[key].runs += rc;
+          bowlerMap[key].innings++;
+          bowlerMap[key].maidens += Number(w.maidens) || 0;
+          bowlerMap[key].matches.add(row.id);
+          const fullOvers = parseInt(w.overs || 0, 10);
+          const remBalls = Number(w.balls || 0);
+          bowlerMap[key].balls += fullOvers * 6 + Math.min(remBalls, 5);
+          if (wk > bowlerMap[key].bestW || (wk === bowlerMap[key].bestW && rc < bowlerMap[key].bestR)) {
+            bowlerMap[key].bestW = wk;
+            bowlerMap[key].bestR = rc;
+          }
+        }
+      }
+    }
+
+    const battersList = Object.values(batterMap).map((b) => {
+      const dismissals = Math.max(0, b.innings - b.notOuts);
+      const avg = dismissals > 0 ? (b.runs / dismissals).toFixed(2) : (b.runs > 0 ? `${b.runs}.00*` : "-");
+      const sr = b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(1) : "-";
+      return {
+        id: b.id,
+        name: b.name,
+        matches: b.matches.size,
+        innings: b.innings,
+        runs: b.runs,
+        balls: b.balls,
+        highestScore: b.highScore,
+        fours: b.fours,
+        sixes: b.sixes,
+        fifties: b.fifties,
+        hundreds: b.hundreds,
+        average: avg,
+        strikeRate: sr,
+      };
+    }).sort((a, b) => b.runs - a.runs);
+
+    const bowlersList = Object.values(bowlerMap).map((w) => {
+      const avg = w.wickets > 0 ? (w.runs / w.wickets).toFixed(2) : "-";
+      const econ = w.balls > 0 ? ((w.runs / w.balls) * 6).toFixed(2) : "-";
+      const bestFigures = w.bestW > 0 ? `${w.bestW}/${w.bestR}` : (w.innings > 0 ? `0/${w.runs}` : "-");
+      return {
+        id: w.id,
+        name: w.name,
+        matches: w.matches.size,
+        innings: w.innings,
+        overs: formatCricketOvers(null, w.balls),
+        balls: w.balls,
+        maidens: w.maidens,
+        runs: w.runs,
+        wickets: w.wickets,
+        average: avg,
+        economy: econ,
+        bestFigures,
+      };
+    }).sort((a, b) => b.wickets - a.wickets);
+
+    const playerRecordMap = {};
+    for (const b of battersList) {
+      const key = b.id ? `id_${b.id}` : b.name;
+      playerRecordMap[key] = {
+        id: b.id,
+        name: b.name,
+        matches: b.matches,
+        batting: b,
+        bowling: { innings: 0, overs: "0.0", balls: 0, maidens: 0, runs: 0, wickets: 0, average: "-", economy: "-", bestFigures: "-" },
+        totalScore: b.runs + b.matches * 10,
+      };
+    }
+    for (const w of bowlersList) {
+      const key = w.id ? `id_${w.id}` : w.name;
+      if (!playerRecordMap[key]) {
+        playerRecordMap[key] = {
+          id: w.id,
+          name: w.name,
+          matches: w.matches,
+          batting: { innings: 0, runs: 0, balls: 0, highestScore: 0, fours: 0, sixes: 0, fifties: 0, hundreds: 0, average: "-", strikeRate: "-" },
+          bowling: w,
+          totalScore: w.wickets * 25 + w.matches * 10,
+        };
+      } else {
+        playerRecordMap[key].bowling = w;
+        playerRecordMap[key].matches = Math.max(playerRecordMap[key].matches, w.matches);
+        playerRecordMap[key].totalScore += w.wickets * 25;
+      }
+    }
+
+    const allPlayerRecords = Object.values(playerRecordMap).sort((a, b) => b.totalScore - a.totalScore);
+
+    res.json({
+      success: true,
+      teamName: canonicalTeamName,
+      matchesCount: matchIds.size,
+      topBatters: battersList.slice(0, 5),
+      topBowlers: bowlersList.slice(0, 5),
+      players: allPlayerRecords,
+    });
+  } catch (err) {
+    console.error("Error in /api/matchups/team:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to load team matchups" });
+  }
+});
+
+// -----------------------------------------------------------------------------
 // 6. Single Player Dossier (/api/players/:id) - Fast Subquery (<10ms)
 // -----------------------------------------------------------------------------
 app.get("/api/players/:id", async (req, res) => {
