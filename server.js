@@ -6,10 +6,10 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import pg from "pg";
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -1596,18 +1596,36 @@ app.get("/api/players/compare", async (req, res) => {
       const p2Runs = Number(st2.runs) || 0;
       const p1Avg = parseFloat(st1.battingAvg) || 0;
       const p2Avg = parseFloat(st2.battingAvg) || 0;
+      const p1SR = parseFloat(st1.strikeRate) || 0;
+      const p2SR = parseFloat(st2.strikeRate) || 0;
 
       const p1Wkts = Number(st1.wickets) || 0;
       const p2Wkts = Number(st2.wickets) || 0;
+      const p1BowlAvg = parseFloat(st1.bowlingAvg) || 0;
+      const p2BowlAvg = parseFloat(st2.bowlingAvg) || 0;
       const p1Econ = parseFloat(st1.economy) || 0;
       const p2Econ = parseFloat(st2.economy) || 0;
 
-      const isP1Batter = p1Bat >= p1Bowl + 8;
-      const isP2Batter = p2Bat >= p2Bowl + 8;
-      const isP1Bowler = p1Bowl >= p1Bat + 8;
-      const isP2Bowler = p2Bowl >= p2Bat + 8;
+      const p1Matches = Number(st1.matches) || 0;
+      const p2Matches = Number(st2.matches) || 0;
 
-      // 1. Pure Batter vs Pure Bowler
+      // 0. Format awareness: if neither has played in this format
+      if (p1Matches === 0 && p2Matches === 0) {
+        if (p1Ovr !== p2Ovr) {
+          const better = p1Ovr > p2Ovr ? p1 : p2;
+          const worse = p1Ovr > p2Ovr ? p2 : p1;
+          return `Neither player has contested matches in ${fmtLabel} yet. Based on core ratings, ${better.name} (${better.overall_rating} OVR) carries the theoretical advantage.`;
+        }
+        return `Neither player has made an appearance in ${fmtLabel} yet. Both enter with equal core ratings (${p1Ovr} OVR).`;
+      }
+
+      // Check archetypes and ratings for role detection
+      const isP1Batter = p1Bat >= 70 && p1Bat >= p1Bowl + 10;
+      const isP2Batter = p2Bat >= 70 && p2Bat >= p2Bowl + 10;
+      const isP1Bowler = p1Bowl >= 70 && p1Bowl >= p1Bat + 10;
+      const isP2Bowler = p2Bowl >= 70 && p2Bowl >= p2Bat + 10;
+
+      // 1. Pure Batter vs Pure Bowler (Contrasting specializations)
       if ((isP1Batter && isP2Bowler) || (isP1Bowler && isP2Batter)) {
         const batP = isP1Batter ? p1 : p2;
         const batS = isP1Batter ? st1 : st2;
@@ -1615,57 +1633,88 @@ app.get("/api/players/compare", async (req, res) => {
         const bowlP = isP1Bowler ? p1 : p2;
         const bowlS = isP1Bowler ? st1 : st2;
         const bowlR = isP1Bowler ? p1Bowl : p2Bowl;
-        return `Contrasting Masterclasses — ${batP.name} commands the batting department (${batR} BAT, ${batS.runs.toLocaleString()} runs @ ${batS.battingAvg} avg), while ${bowlP.name} dominates with the ball (${bowlR} BOWL, ${bowlS.wickets} wkts @ ${bowlS.economy} econ).`;
+        const batSummary = batS.matches > 0 ? `${batS.runs.toLocaleString()} runs @ ${batS.battingAvg} avg` : `${batR} BAT rating`;
+        const bowlSummary = bowlS.matches > 0 ? `${bowlS.wickets} wkts @ ${bowlS.economy} econ` : `${bowlR} BOWL rating`;
+        return `Contrasting Specializations — ${batP.name} commands the batting department (${batSummary}), while ${bowlP.name} spearheads the bowling assault (${bowlSummary}).`;
       }
 
       // 2. Both primarily Batters
       if (isP1Batter && isP2Batter) {
-        if (p1Bat >= p2Bat + 3 || (p1Bat >= p2Bat && p1Runs > p2Runs * 1.25)) {
-          const edge = p1Avg > p2Avg && p1Avg > 0 ? `higher average (${st1.battingAvg} vs ${st2.battingAvg})` : `greater run volume (${st1.runs.toLocaleString()} vs ${st2.runs.toLocaleString()})`;
-          return `${p1.name} holds the definitive batting edge in ${fmtLabel} (${p1Bat} vs ${p2Bat} BAT) with ${edge}.`;
+        if ((p1Runs > p2Runs && p1Avg >= p2Avg) || (p1Avg > p2Avg && p1Runs >= p2Runs)) {
+          const margin = p1Runs > p2Runs ? `${p1Runs.toLocaleString()} runs @ ${p1Avg} avg vs ${p2Runs.toLocaleString()} runs @ ${p2Avg} avg` : `superior average of ${p1Avg} vs ${p2Avg}`;
+          return `${p1.name} holds the clear batting advantage in ${fmtLabel} (${margin}).`;
         }
-        if (p2Bat >= p1Bat + 3 || (p2Bat >= p1Bat && p2Runs > p1Runs * 1.25)) {
-          const edge = p2Avg > p1Avg && p2Avg > 0 ? `higher average (${st2.battingAvg} vs ${st1.battingAvg})` : `greater run volume (${st2.runs.toLocaleString()} vs ${st1.runs.toLocaleString()})`;
-          return `${p2.name} holds the definitive batting edge in ${fmtLabel} (${p2Bat} vs ${p1Bat} BAT) with ${edge}.`;
+        if ((p2Runs > p1Runs && p2Avg >= p1Avg) || (p2Avg > p1Avg && p2Runs >= p1Runs)) {
+          const margin = p2Runs > p1Runs ? `${p2Runs.toLocaleString()} runs @ ${p2Avg} avg vs ${p1Runs.toLocaleString()} runs @ ${p1Avg} avg` : `superior average of ${p2Avg} vs ${p1Avg}`;
+          return `${p2.name} holds the clear batting advantage in ${fmtLabel} (${margin}).`;
         }
-        if (Math.abs(p1Bat - p2Bat) <= 2) {
-          if (p1Runs > p2Runs && p2Avg > p1Avg) {
-            return `Close batting rivalry — ${p1.name} leads in career volume (${st1.runs.toLocaleString()} runs), while ${p2.name} holds higher consistency (${st2.battingAvg} avg).`;
-          }
-          if (p2Runs > p1Runs && p1Avg > p2Avg) {
-            return `Close batting rivalry — ${p2.name} leads in career volume (${st2.runs.toLocaleString()} runs), while ${p1.name} holds higher consistency (${st1.battingAvg} avg).`;
-          }
-          return `${p1.name} and ${p2.name} are evenly matched run-scorers (${p1Bat} vs ${p2Bat} BAT) in ${fmtLabel}.`;
+        if (p1Runs > p2Runs && p2Avg > p1Avg) {
+          return `Competitive Batting Split — ${p1.name} leads in career volume (${p1Runs.toLocaleString()} vs ${p2Runs.toLocaleString()} runs), while ${p2.name} boasts higher scoring consistency (${p2Avg} vs ${p1Avg} avg).`;
         }
+        if (p2Runs > p1Runs && p1Avg > p2Avg) {
+          return `Competitive Batting Split — ${p2.name} leads in career volume (${p2Runs.toLocaleString()} vs ${p1Runs.toLocaleString()} runs), while ${p1.name} boasts higher scoring consistency (${p1Avg} vs ${p2Avg} avg).`;
+        }
+        if (p1Bat !== p2Bat) {
+          const better = p1Bat > p2Bat ? p1 : p2;
+          const worse = p1Bat > p2Bat ? p2 : p1;
+          return `${better.name} carries higher technical rating (${better.batting_rating} vs ${worse.batting_rating} BAT) in an otherwise tightly matched batting duel.`;
+        }
+        return `Dead-Heat Batting Rivalry — ${p1.name} and ${p2.name} share identical ratings (${p1Bat} BAT) and evenly distributed production in ${fmtLabel}.`;
       }
 
       // 3. Both primarily Bowlers
       if (isP1Bowler && isP2Bowler) {
-        if (p1Bowl >= p2Bowl + 3 || (p1Bowl >= p2Bowl && p1Wkts > p2Wkts * 1.25)) {
-          const edge = p1Econ > 0 && p1Econ < p2Econ ? `stingier economy (${st1.economy} vs ${st2.economy})` : `higher wicket tally (${st1.wickets} vs ${st2.wickets})`;
-          return `${p1.name} commands the bowling duel in ${fmtLabel} (${p1Bowl} vs ${p2Bowl} BOWL) with ${edge}.`;
+        const p1BetterEcon = p1Econ > 0 && (p2Econ === 0 || p1Econ < p2Econ);
+        const p2BetterEcon = p2Econ > 0 && (p1Econ === 0 || p2Econ < p1Econ);
+
+        if ((p1Wkts > p2Wkts && (p1BetterEcon || p1BowlAvg <= p2BowlAvg)) || (p1Wkts === p2Wkts && p1BetterEcon)) {
+          return `${p1.name} commands the bowling duel in ${fmtLabel} (${p1Wkts} wkts @ ${p1Econ} econ vs ${p2Wkts} wkts @ ${p2Econ} econ).`;
         }
-        if (p2Bowl >= p1Bowl + 3 || (p2Bowl >= p1Bowl && p2Wkts > p1Wkts * 1.25)) {
-          const edge = p2Econ > 0 && p2Econ < p1Econ ? `stingier economy (${st2.economy} vs ${st1.economy})` : `higher wicket tally (${st2.wickets} vs ${st1.wickets})`;
-          return `${p2.name} commands the bowling duel in ${fmtLabel} (${p2Bowl} vs ${p1Bowl} BOWL) with ${edge}.`;
+        if ((p2Wkts > p1Wkts && (p2BetterEcon || p2BowlAvg <= p1BowlAvg)) || (p2Wkts === p1Wkts && p2BetterEcon)) {
+          return `${p2.name} commands the bowling duel in ${fmtLabel} (${p2Wkts} wkts @ ${p2Econ} econ vs ${p1Wkts} wkts @ ${p1Econ} econ).`;
         }
-        if (Math.abs(p1Bowl - p2Bowl) <= 2) {
-          return `Intense bowling showdown — ${p1.name} (${st1.wickets} wkts, ${st1.economy} econ) and ${p2.name} (${st2.wickets} wkts, ${st2.economy} econ) share near-identical strike power.`;
+        if (p1Wkts > p2Wkts && p2BetterEcon) {
+          return `Contrasting Bowling Threat — ${p1.name} claims higher strike power (${p1Wkts} vs ${p2Wkts} wickets), while ${p2.name} maintains tighter run containment (${p2Econ} vs ${p1Econ} economy).`;
         }
+        if (p2Wkts > p1Wkts && p1BetterEcon) {
+          return `Contrasting Bowling Threat — ${p2.name} claims higher strike power (${p2Wkts} vs ${p1Wkts} wickets), while ${p1.name} maintains tighter run containment (${p1Econ} vs ${p2Econ} economy).`;
+        }
+        if (p1Bowl !== p2Bowl) {
+          const better = p1Bowl > p2Bowl ? p1 : p2;
+          const worse = p1Bowl > p2Bowl ? p2 : p1;
+          return `${better.name} carries higher bowling rating (${better.bowling_rating} vs ${worse.bowling_rating} BOWL) in a closely fought duel.`;
+        }
+        return `Evenly matched bowling spearheads — ${p1.name} and ${p2.name} produce matching strike capability in ${fmtLabel}.`;
       }
 
-      // 4. All-Rounder / General Overall Advantage
-      if (p1Ovr > p2Ovr + 2) {
-        const primaryWeapon = p1Bat > p2Bat ? "batting versatility" : "bowling control";
-        return `${p1.name} claims the overall edge (${p1Ovr} vs ${p2Ovr} OVR), bolstered by stronger ${primaryWeapon}.`;
+      // 4. All-Rounder / General Comparison
+      let p1Points = 0;
+      let p2Points = 0;
+      if (p1Ovr > p2Ovr) p1Points += (p1Ovr - p2Ovr) * 1.5;
+      else if (p2Ovr > p1Ovr) p2Points += (p2Ovr - p1Ovr) * 1.5;
+      if (p1Runs > p2Runs) p1Points += 2;
+      else if (p2Runs > p1Runs) p2Points += 2;
+      if (p1Wkts > p2Wkts) p1Points += 2;
+      else if (p2Wkts > p1Wkts) p2Points += 2;
+      if (p1Avg > p2Avg && p1Avg > 0) p1Points += 1.5;
+      else if (p2Avg > p1Avg && p2Avg > 0) p2Points += 1.5;
+      if (p1Econ > 0 && (p2Econ === 0 || p1Econ < p2Econ)) p1Points += 1.5;
+      else if (p2Econ > 0 && (p1Econ === 0 || p2Econ < p1Econ)) p2Points += 1.5;
+
+      if (p1Points > p2Points + 1.5) {
+        const batPart = p1Runs > p2Runs ? `${p1Runs.toLocaleString()} runs` : "";
+        const bowlPart = p1Wkts > p2Wkts ? `${p1Wkts} wickets` : "";
+        const lead = [batPart, bowlPart].filter(Boolean).join(" and ") || `stronger core ratings (${p1Ovr} vs ${p2Ovr} OVR)`;
+        return `${p1.name} claims the decisive competitive edge in ${fmtLabel}, propelled by ${lead}.`;
       }
-      if (p2Ovr > p1Ovr + 2) {
-        const primaryWeapon = p2Bat > p1Bat ? "batting versatility" : "bowling control";
-        return `${p2.name} claims the overall edge (${p2Ovr} vs ${p1Ovr} OVR), bolstered by stronger ${primaryWeapon}.`;
+      if (p2Points > p1Points + 1.5) {
+        const batPart = p2Runs > p1Runs ? `${p2Runs.toLocaleString()} runs` : "";
+        const bowlPart = p2Wkts > p1Wkts ? `${p2Wkts} wickets` : "";
+        const lead = [batPart, bowlPart].filter(Boolean).join(" and ") || `stronger core ratings (${p2Ovr} vs ${p1Ovr} OVR)`;
+        return `${p2.name} claims the decisive competitive edge in ${fmtLabel}, propelled by ${lead}.`;
       }
 
-      // 5. Evenly matched
-      return `Evenly Matched Contenders — ${p1.name} (${p1Ovr} OVR) and ${p2.name} (${p2Ovr} OVR) share equal prestige in ${fmtLabel}.`;
+      return `Evenly Matched Contenders — ${p1.name} (${p1Ovr} OVR) and ${p2.name} (${p2Ovr} OVR) share equal standing and complementary strengths in ${fmtLabel}.`;
     };
 
     const verdict = generateComparisonVerdict(player1, player2, s1, s2, formatLabel);

@@ -270,6 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initPlayerSearchDebounce();
   initCompareAutocomplete();
   initOppMatchupAutocomplete();
+  initOppTeamAutocomplete();
   renderFormatPills(state.rankingsScope);
 
   // Initial Data Load
@@ -1380,19 +1381,7 @@ function switchH2HMode(mode) {
 
   if (!isDuel) {
     initOppMatchupAutocomplete();
-    populateOppTeamDropdown();
-  }
-}
-
-function populateOppTeamDropdown() {
-  const sel = document.getElementById("oppTeamSelect");
-  if (!sel) return;
-  if (state.teamsList && state.teamsList.length > 0 && sel.options.length <= 1) {
-    let opts = '<option value="ALL">All Oppositions Combined</option>';
-    for (const t of state.teamsList) {
-      opts += `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`;
-    }
-    sel.innerHTML = opts;
+    initOppTeamAutocomplete();
   }
 }
 
@@ -1447,6 +1436,92 @@ function initOppMatchupAutocomplete() {
   });
 }
 
+function initOppTeamAutocomplete() {
+  const input = document.getElementById("oppTeamInput");
+  const dropdown = document.getElementById("oppTeamDropdown");
+  if (!input || !dropdown || input._initOppTeam) return;
+  input._initOppTeam = true;
+
+  const showSuggestions = (q = "") => {
+    const query = (q || "").trim().toLowerCase();
+    const suggestions = [];
+    const addedNames = new Set();
+
+    // 1. Teams faced by current player
+    if (window._standaloneVsTeams && window._standaloneVsTeams.length > 0) {
+      for (const t of window._standaloneVsTeams) {
+        if (!query || t.teamName.toLowerCase().includes(query)) {
+          suggestions.push({
+            name: t.teamName,
+            meta: `${t.matches} Mat • ${t.batting.runs} R • ${t.bowling.wickets} W`
+          });
+          addedNames.add(t.teamName.toLowerCase());
+          if (suggestions.length >= 8) break;
+        }
+      }
+    }
+
+    // 2. Tournament teams from state.teamsList
+    if (state.teamsList && state.teamsList.length > 0) {
+      for (const t of state.teamsList) {
+        if (!addedNames.has(t.name.toLowerCase()) && (!query || t.name.toLowerCase().includes(query))) {
+          suggestions.push({
+            name: t.name,
+            meta: "Tournament Team"
+          });
+          addedNames.add(t.name.toLowerCase());
+          if (suggestions.length >= 8) break;
+        }
+      }
+    }
+
+    if (suggestions.length > 0) {
+      dropdown.innerHTML = suggestions.map(s => `
+        <div class="autocomplete-item" onclick="selectOppTeamAutocomplete('${s.name.replace(/'/g, "\\'")}')">
+          <span class="item-name">${escapeHtml(s.name)}</span>
+          <span class="item-meta">${escapeHtml(s.meta)}</span>
+        </div>
+      `).join("");
+      dropdown.classList.remove("hidden");
+    } else {
+      dropdown.classList.add("hidden");
+    }
+  };
+
+  input.addEventListener("focus", () => {
+    showSuggestions(input.value);
+  });
+
+  input.addEventListener("input", (e) => {
+    const val = e.target.value;
+    showSuggestions(val);
+
+    // Dynamic live filtering of table and active matchup card
+    if (window._standaloneVsTeams && window._standaloneVsTeams.length > 0) {
+      filterOppMatchupTable(val);
+      filterStandaloneOppMatchup(val);
+    }
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      dropdown.classList.add("hidden");
+      if (window._standaloneVsTeams && window._standaloneVsTeams.length > 0) {
+        filterOppMatchupTable(input.value.trim());
+        filterStandaloneOppMatchup(input.value.trim());
+      } else {
+        loadStandaloneOppMatchup();
+      }
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.add("hidden");
+    }
+  });
+}
+
 function selectOppAutocomplete(name) {
   const input = document.getElementById("oppPlayerInput");
   if (input) input.value = name;
@@ -1455,24 +1530,77 @@ function selectOppAutocomplete(name) {
   loadStandaloneOppMatchup();
 }
 
+function selectOppTeamAutocomplete(name) {
+  const input = document.getElementById("oppTeamInput");
+  if (input) input.value = name;
+  const dropdown = document.getElementById("oppTeamDropdown");
+  if (dropdown) dropdown.classList.add("hidden");
+
+  if (window._standaloneVsTeams && window._standaloneVsTeams.length > 0) {
+    filterOppMatchupTable(name);
+    filterStandaloneOppMatchup(name);
+  } else if (document.getElementById("oppPlayerInput")?.value.trim()) {
+    loadStandaloneOppMatchup();
+  }
+}
+
 function quickLoadOppMatchup(name) {
   const input = document.getElementById("oppPlayerInput");
   if (input) input.value = name;
   loadStandaloneOppMatchup();
 }
 
+function filterOppMatchupTable(query) {
+  const table = document.querySelector("#oppMatchupResultsContainer .card-table tbody");
+  if (!table) return;
+  const q = (query || "").trim().toLowerCase();
+  const rows = table.querySelectorAll("tr");
+  rows.forEach(row => {
+    const teamCell = row.cells[0];
+    const teamText = teamCell ? teamCell.textContent.toLowerCase() : "";
+    if (!q || teamText.includes(q)) {
+      row.style.display = "";
+    } else {
+      row.style.display = "none";
+    }
+  });
+}
+
 async function loadStandaloneOppMatchup() {
-  const input = document.getElementById("oppPlayerInput");
-  const query = input ? input.value.trim() : "";
+  const playerInput = document.getElementById("oppPlayerInput");
+  const teamInput = document.getElementById("oppTeamInput");
+  const playerQuery = playerInput ? playerInput.value.trim() : "";
+  const teamQuery = teamInput ? teamInput.value.trim() : "";
   const container = document.getElementById("oppMatchupResultsContainer");
 
-  if (!query) {
+  if (!playerQuery && !teamQuery) {
     if (container) {
       container.innerHTML = `
         <div class="compare-placeholder-card">
           <div class="placeholder-icon">⚠️</div>
-          <div class="placeholder-title">Please enter a player name</div>
-          <div class="placeholder-desc">Type a player name or click one of the quick stars above.</div>
+          <div class="placeholder-title">Please enter a player or team name</div>
+          <div class="placeholder-desc">Type a player name or click one of the quick stars above to view career opposition breakdown.</div>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  if (!playerQuery && teamQuery) {
+    if (container) {
+      container.innerHTML = `
+        <div class="compare-placeholder-card">
+          <div class="placeholder-icon">🏏</div>
+          <div class="placeholder-title">Select a Star to View Matchups Against ${escapeHtml(teamQuery)}</div>
+          <div class="placeholder-desc">You selected <strong>${escapeHtml(teamQuery)}</strong>. Pick any player above or click a star below to inspect their full record against this opposition:</div>
+          <div class="compare-quick-picks" style="justify-content: center; margin-top: 16px; flex-wrap: wrap; gap: 8px;">
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Matthew Botha')">Matthew Botha</button>
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanay Jain')">Tanay Jain</button>
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Dinuka Perera')">Dinuka Perera</button>
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Ben Whitaker')">Ben Whitaker</button>
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Qais Farahi')">Qais Farahi</button>
+            <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanvir Hossain')">Tanvir Hossain</button>
+          </div>
         </div>
       `;
     }
@@ -1483,17 +1611,17 @@ async function loadStandaloneOppMatchup() {
     container.innerHTML = `
       <div class="loading-state">
         <div class="spinner"></div>
-        <p>Retrieving opposition matchup records for ${escapeHtml(query)}...</p>
+        <p>Retrieving opposition matchup records for ${escapeHtml(playerQuery)}...</p>
       </div>
     `;
   }
 
   try {
-    const searchRes = await apiFetch(`/api/players?search=${encodeURIComponent(query)}&limit=1`);
+    const searchRes = await apiFetch(`/api/players?search=${encodeURIComponent(playerQuery)}&limit=1`);
     if (!searchRes.ok) throw new Error(`HTTP error ${searchRes.status}`);
     const searchData = await searchRes.json();
     if (!searchData.success || !searchData.players || searchData.players.length === 0) {
-      throw new Error(`Player "${query}" not found. Please check spelling.`);
+      throw new Error(`Player "${playerQuery}" not found. Please check spelling.`);
     }
 
     const playerId = searchData.players[0].id;
@@ -1508,17 +1636,13 @@ async function loadStandaloneOppMatchup() {
     window._standaloneVsTeams = vsTeams;
     window._standalonePlayer = player;
 
-    const teamSelect = document.getElementById("oppTeamSelect");
-    if (teamSelect) {
-      let opts = `<option value="ALL">All Oppositions Combined (${vsTeams.length} Opponents Faced)</option>`;
-      for (const vt of vsTeams) {
-        opts += `<option value="${escapeHtml(vt.teamName)}">vs ${escapeHtml(vt.teamName)} (${vt.matches} Mat, ${vt.batting.runs} R, ${vt.bowling.wickets} W)</option>`;
-      }
-      teamSelect.innerHTML = opts;
-      teamSelect.value = "ALL";
+    if (teamQuery) {
+      renderStandaloneMatchupResults(teamQuery);
+      filterStandaloneOppMatchup(teamQuery);
+      filterOppMatchupTable(teamQuery);
+    } else {
+      renderStandaloneMatchupResults("ALL");
     }
-
-    renderStandaloneMatchupResults("ALL");
   } catch (err) {
     if (container) {
       container.innerHTML = `
@@ -1573,7 +1697,7 @@ function renderStandaloneMatchupResults(selectedTeam = "ALL") {
       </div>
 
       <div style="margin-top: 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
-        <span>Showing detailed career breakdown against all ${vsTeams.length} opposition teams. Click any team row below to filter:</span>
+        <span>Showing detailed career breakdown against all ${vsTeams.length} opposition teams. Type in the Opposition Team box or click any row to filter:</span>
       </div>
 
       <div style="overflow-x: auto; max-height: 340px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
@@ -1620,20 +1744,41 @@ function renderStandaloneMatchupResults(selectedTeam = "ALL") {
 
 function filterStandaloneOppMatchup(teamName) {
   const cardContainer = document.getElementById("standaloneVsCardContainer");
-  if (cardContainer && window._standaloneVsTeams) {
-    cardContainer.innerHTML = renderVsTeamMatchupCardHtml(window._standaloneVsTeams, teamName);
+  const vsTeams = window._standaloneVsTeams || [];
+  if (cardContainer && vsTeams.length > 0) {
+    if (!teamName || teamName.trim() === "" || teamName.toUpperCase() === "ALL") {
+      cardContainer.innerHTML = renderVsTeamMatchupCardHtml(vsTeams, "ALL");
+    } else {
+      const q = teamName.trim().toLowerCase();
+      const matched = vsTeams.find(t => t.teamName.toLowerCase() === q)
+                   || vsTeams.find(t => t.teamName.toLowerCase().includes(q));
+      if (matched) {
+        cardContainer.innerHTML = renderVsTeamMatchupCardHtml(vsTeams, matched.teamName);
+      } else {
+        cardContainer.innerHTML = renderVsTeamMatchupCardHtml(vsTeams, teamName);
+      }
+    }
   }
+
   document.querySelectorAll("#oppMatchupResultsContainer .clickable-row").forEach(tr => tr.classList.remove("active-opp"));
-  if (teamName && teamName !== "ALL") {
-    const slug = teamName.replace(/[^a-zA-Z0-9]/g, "_");
+  if (teamName && teamName.toUpperCase() !== "ALL") {
+    const q = teamName.trim().toLowerCase();
+    const matched = vsTeams.find(t => t.teamName.toLowerCase() === q)
+                 || vsTeams.find(t => t.teamName.toLowerCase().includes(q));
+    const targetName = matched ? matched.teamName : teamName;
+    const slug = targetName.replace(/[^a-zA-Z0-9]/g, "_");
     const row = document.getElementById(`standalone-row-${slug}`);
-    if (row) row.classList.add("active-opp");
+    if (row) {
+      row.classList.add("active-opp");
+      row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   }
 }
 
 function selectStandaloneVsTeamRow(teamName) {
-  const sel = document.getElementById("oppTeamSelect");
-  if (sel) sel.value = teamName;
+  const input = document.getElementById("oppTeamInput");
+  if (input) input.value = teamName;
+  filterOppMatchupTable(teamName);
   filterStandaloneOppMatchup(teamName);
 }
 

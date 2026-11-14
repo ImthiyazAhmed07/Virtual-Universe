@@ -345,8 +345,9 @@
             <div class="compare-quick-picks">
               <span class="quick-pick-lbl">Quick Matchups:</span>
               <button class="quick-pick-btn" onclick="quickCompare('Matthew Botha', 'Tanay Jain')">Botha vs Jain</button>
+              <button class="quick-pick-btn" onclick="quickCompare('Dinuka Perera', 'Ben Whitaker')">Perera vs Whitaker</button>
               <button class="quick-pick-btn" onclick="quickCompare('Qais Farahi', 'Matthew Botha')">Farahi vs Botha</button>
-              <button class="quick-pick-btn" onclick="quickCompare('Kabir Kohli', 'Liam Vance')">Kohli vs Vance</button>
+              <button class="quick-pick-btn" onclick="quickCompare('Tanvir Hossain', 'Matthew Botha')">Hossain vs Botha</button>
             </div>
 
             <button class="compare-run-btn" onclick="runPlayerComparison()">
@@ -378,11 +379,10 @@
             </div>
 
             <div class="compare-input-col">
-              <label class="compare-col-label">Filter Opposition Team</label>
-              <div class="custom-select-wrap" style="width: 100%;">
-                <select id="oppTeamSelect" class="form-select" onchange="filterStandaloneOppMatchup(this.value)" style="width: 100%; height: 42px; background: rgba(0,0,0,0.3); color: #fff; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0 12px; font-weight: 600; font-size: 13px;">
-                  <option value="ALL">All Oppositions Combined</option>
-                </select>
+              <label class="compare-col-label">Opposition Team</label>
+              <div class="compare-search-input-wrap">
+                <input type="text" id="oppTeamInput" placeholder="Type team name (e.g. Hong Kong, South Africa)..." autocomplete="off">
+                <div id="oppTeamDropdown" class="autocomplete-dropdown hidden"></div>
               </div>
             </div>
           </div>
@@ -392,9 +392,10 @@
               <span class="quick-pick-lbl">Quick Stars:</span>
               <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Matthew Botha')">Matthew Botha</button>
               <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanay Jain')">Tanay Jain</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Dinuka Perera')">Dinuka Perera</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Ben Whitaker')">Ben Whitaker</button>
               <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Qais Farahi')">Qais Farahi</button>
-              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Kabir Kohli')">Kabir Kohli</button>
-              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Liam Vance')">Liam Vance</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanvir Hossain')">Tanvir Hossain</button>
             </div>
 
             <button class="compare-run-btn" onclick="loadStandaloneOppMatchup()">
