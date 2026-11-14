@@ -2862,6 +2862,7 @@ function renderVsTeamMatchupCardHtml(vsTeams, selectedTeamName) {
   let bowl = { innings: 0, overs: "0.0", balls: 0, maidens: 0, runs: 0, wickets: 0, average: "-", economy: "-", bestFigures: "-" };
   let headerTitle = "";
   let matchesCount = 0;
+  let found = null;
 
   if (!selectedTeamName || selectedTeamName === "ALL") {
     headerTitle = `All Oppositions Combined (${vsTeams.length} Opponent Teams Faced)`;
@@ -2895,9 +2896,9 @@ function renderVsTeamMatchupCardHtml(vsTeams, selectedTeamName) {
     bowl.bestFigures = "-";
   } else {
     const q = (selectedTeamName || "").trim().toLowerCase();
-    const found = vsTeams.find(t => t.teamName && t.teamName.toLowerCase() === q)
-               || vsTeams.find(t => t.teamName && t.teamName.toLowerCase().includes(q))
-               || vsTeams.find(t => t.teamName && q.includes(t.teamName.toLowerCase()));
+    found = vsTeams.find(t => t.teamName && t.teamName.toLowerCase() === q)
+         || vsTeams.find(t => t.teamName && t.teamName.toLowerCase().includes(q))
+         || vsTeams.find(t => t.teamName && q.includes(t.teamName.toLowerCase()));
     if (found) {
       headerTitle = `Matchup vs ${found.teamName}`;
       matchesCount = found.matches;
