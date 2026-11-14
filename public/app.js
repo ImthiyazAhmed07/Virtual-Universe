@@ -21,6 +21,8 @@ const state = {
   playersTotalPages: 1,
   playerSearchQuery: "",
   playerCountryFilter: "All",
+  playerTeamFilter: "All",
+  teamsList: [],
   playerRoleFilter: "All",
   playerTierFilter: "All",
   playerTraitFilter: "All",
@@ -233,6 +235,32 @@ function renderDossierTraits(traitsObj) {
 }
 
 // -----------------------------------------------------------------------------
+// Teams Loading & Dropdown Population
+// -----------------------------------------------------------------------------
+async function loadTeams() {
+  try {
+    const res = await apiFetch("/api/teams");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.success && Array.isArray(data.teams)) {
+      state.teamsList = data.teams;
+      const teamSelect = document.getElementById("teamSelect");
+      if (teamSelect) {
+        const currentVal = teamSelect.value || "All";
+        let opts = `<option value="All">All Teams</option>`;
+        for (const t of data.teams) {
+          opts += `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
+        }
+        teamSelect.innerHTML = opts;
+        teamSelect.value = currentVal;
+      }
+    }
+  } catch (err) {
+    console.debug("Failed to load teams:", err);
+  }
+}
+
+// -----------------------------------------------------------------------------
 // DOM Content Loaded & Initialization
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
@@ -241,12 +269,14 @@ document.addEventListener("DOMContentLoaded", () => {
   initAutoRefresh();
   initPlayerSearchDebounce();
   initCompareAutocomplete();
+  initOppMatchupAutocomplete();
   renderFormatPills(state.rankingsScope);
 
   // Initial Data Load
   loadLiveStreams();
   loadRecentMatches();
   loadOverviewStats();
+  loadTeams();
 });
 
 // -----------------------------------------------------------------------------
@@ -883,6 +913,7 @@ function initPlayerSearchDebounce() {
 
 function applyPlayerFilters() {
   state.playerCountryFilter = document.getElementById("countrySelect").value;
+  state.playerTeamFilter = document.getElementById("teamSelect") ? document.getElementById("teamSelect").value : "All";
   state.playerRoleFilter = document.getElementById("roleSelect").value;
   state.playerTierFilter = document.getElementById("tierSelect").value;
   state.playerTraitFilter = document.getElementById("traitSelect").value;
@@ -896,6 +927,7 @@ function applyPlayerFilters() {
 function resetPlayerFilters() {
   document.getElementById("playerSearchInput").value = "";
   document.getElementById("countrySelect").value = "All";
+  if (document.getElementById("teamSelect")) document.getElementById("teamSelect").value = "All";
   document.getElementById("roleSelect").value = "All";
   document.getElementById("tierSelect").value = "All";
   document.getElementById("traitSelect").value = "All";
@@ -905,6 +937,7 @@ function resetPlayerFilters() {
 
   state.playerSearchQuery = "";
   state.playerCountryFilter = "All";
+  state.playerTeamFilter = "All";
   state.playerRoleFilter = "All";
   state.playerTierFilter = "All";
   state.playerTraitFilter = "All";
@@ -928,6 +961,7 @@ async function loadPlayers() {
     });
     if (state.playerSearchQuery) params.append("search", state.playerSearchQuery);
     if (state.playerCountryFilter !== "All") params.append("country", state.playerCountryFilter);
+    if (state.playerTeamFilter && state.playerTeamFilter !== "All") params.append("team", state.playerTeamFilter);
     if (state.playerRoleFilter !== "All") params.append("role", state.playerRoleFilter);
     if (state.playerTierFilter !== "All") params.append("tier", state.playerTierFilter);
     if (state.playerTraitFilter !== "All") params.append("trait", state.playerTraitFilter);
@@ -965,12 +999,16 @@ function renderPlayers(players) {
       .filter(([_, val]) => Boolean(val))
       .map(([k]) => k);
 
+    const teamTag = p.primaryTeam
+      ? ` • <span style="color: var(--accent-cyan); font-weight: 600;">🛡️ ${escapeHtml(p.primaryTeam)}</span>`
+      : "";
+
     return `
       <div class="player-card" onclick="openPlayerModal(${p.id})">
         <div class="player-card-header">
           <div class="player-name-col">
-            <span class="player-card-name">${p.name}</span>
-            <span class="player-card-nation">${p.country} • Age ${p.age}</span>
+            <span class="player-card-name">${escapeHtml(p.name)}</span>
+            <span class="player-card-nation">${escapeHtml(p.country)} • Age ${p.age}${teamTag}</span>
           </div>
           <div class="overall-rating-badge">
             <span class="rating-num">${p.overallRating}</span>
@@ -1016,6 +1054,11 @@ function renderPlayers(players) {
           <span>Mat: <strong style="color: #fff;">${p.stats.matches}</strong></span>
           <span>Runs: <strong style="color: #fff;">${p.stats.runs.toLocaleString()}</strong> (${p.stats.hundreds}x100)</span>
           <span>Wkts: <strong style="color: #fff;">${p.stats.wickets}</strong></span>
+        </div>
+
+        <div style="margin-top: 10px; display: flex; gap: 8px;" onclick="event.stopPropagation()">
+          <button class="card-action-btn-sm" onclick="openPlayerModal(${p.id}, 'overview')">📊 Profile</button>
+          <button class="card-action-btn-sm matchup" onclick="openPlayerModal(${p.id}, 'matchups')">⚔️ vs Opponents</button>
         </div>
       </div>
     `;
@@ -1318,6 +1361,280 @@ function renderComparisonCard(data) {
       </div>
     </div>
   `;
+}
+
+// -----------------------------------------------------------------------------
+// TAB 4: Standalone Player vs Opposition Matchups Mode
+// -----------------------------------------------------------------------------
+function switchH2HMode(mode) {
+  const isDuel = mode === "duel";
+  const btnDuel = document.getElementById("btnH2HDuel");
+  const btnOpp = document.getElementById("btnH2HOppositions");
+  const pvpArea = document.getElementById("playerVsPlayerArea");
+  const pvtArea = document.getElementById("playerVsTeamArea");
+
+  if (btnDuel) btnDuel.classList.toggle("active", isDuel);
+  if (btnOpp) btnOpp.classList.toggle("active", !isDuel);
+  if (pvpArea) pvpArea.classList.toggle("hidden", !isDuel);
+  if (pvtArea) pvtArea.classList.toggle("hidden", isDuel);
+
+  if (!isDuel) {
+    initOppMatchupAutocomplete();
+    populateOppTeamDropdown();
+  }
+}
+
+function populateOppTeamDropdown() {
+  const sel = document.getElementById("oppTeamSelect");
+  if (!sel) return;
+  if (state.teamsList && state.teamsList.length > 0 && sel.options.length <= 1) {
+    let opts = '<option value="ALL">All Oppositions Combined</option>';
+    for (const t of state.teamsList) {
+      opts += `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`;
+    }
+    sel.innerHTML = opts;
+  }
+}
+
+function initOppMatchupAutocomplete() {
+  const input = document.getElementById("oppPlayerInput");
+  const dropdown = document.getElementById("oppPlayerDropdown");
+  if (!input || !dropdown || input._initH2H) return;
+  input._initH2H = true;
+
+  let debounce;
+  input.addEventListener("input", (e) => {
+    clearTimeout(debounce);
+    const q = e.target.value.trim();
+    if (q.length < 2) {
+      dropdown.classList.add("hidden");
+      dropdown.innerHTML = "";
+      return;
+    }
+
+    debounce = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/players?search=${encodeURIComponent(q)}&limit=6`);
+        const data = await res.json();
+        if (data.success && data.players.length > 0) {
+          dropdown.innerHTML = data.players.map(p => `
+            <div class="autocomplete-item" onclick="selectOppAutocomplete('${p.name.replace(/'/g, "\\'")}')">
+              <span class="item-name">${escapeHtml(p.name)}</span>
+              <span class="item-meta">${escapeHtml(p.country)} • ${p.overallRating} OVR</span>
+            </div>
+          `).join("");
+          dropdown.classList.remove("hidden");
+        } else {
+          dropdown.classList.add("hidden");
+        }
+      } catch {
+        dropdown.classList.add("hidden");
+      }
+    }, 250);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      dropdown.classList.add("hidden");
+      loadStandaloneOppMatchup();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.add("hidden");
+    }
+  });
+}
+
+function selectOppAutocomplete(name) {
+  const input = document.getElementById("oppPlayerInput");
+  if (input) input.value = name;
+  const dropdown = document.getElementById("oppPlayerDropdown");
+  if (dropdown) dropdown.classList.add("hidden");
+  loadStandaloneOppMatchup();
+}
+
+function quickLoadOppMatchup(name) {
+  const input = document.getElementById("oppPlayerInput");
+  if (input) input.value = name;
+  loadStandaloneOppMatchup();
+}
+
+async function loadStandaloneOppMatchup() {
+  const input = document.getElementById("oppPlayerInput");
+  const query = input ? input.value.trim() : "";
+  const container = document.getElementById("oppMatchupResultsContainer");
+
+  if (!query) {
+    if (container) {
+      container.innerHTML = `
+        <div class="compare-placeholder-card">
+          <div class="placeholder-icon">⚠️</div>
+          <div class="placeholder-title">Please enter a player name</div>
+          <div class="placeholder-desc">Type a player name or click one of the quick stars above.</div>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  if (container) {
+    container.innerHTML = `
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Retrieving opposition matchup records for ${escapeHtml(query)}...</p>
+      </div>
+    `;
+  }
+
+  try {
+    const searchRes = await apiFetch(`/api/players?search=${encodeURIComponent(query)}&limit=1`);
+    if (!searchRes.ok) throw new Error(`HTTP error ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    if (!searchData.success || !searchData.players || searchData.players.length === 0) {
+      throw new Error(`Player "${query}" not found. Please check spelling.`);
+    }
+
+    const playerId = searchData.players[0].id;
+
+    const res = await apiFetch(`/api/players/${playerId}`);
+    if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed to load player data");
+
+    const player = data.player;
+    const vsTeams = data.vsTeams || [];
+    window._standaloneVsTeams = vsTeams;
+    window._standalonePlayer = player;
+
+    const teamSelect = document.getElementById("oppTeamSelect");
+    if (teamSelect) {
+      let opts = `<option value="ALL">All Oppositions Combined (${vsTeams.length} Opponents Faced)</option>`;
+      for (const vt of vsTeams) {
+        opts += `<option value="${escapeHtml(vt.teamName)}">vs ${escapeHtml(vt.teamName)} (${vt.matches} Mat, ${vt.batting.runs} R, ${vt.bowling.wickets} W)</option>`;
+      }
+      teamSelect.innerHTML = opts;
+      teamSelect.value = "ALL";
+    }
+
+    renderStandaloneMatchupResults("ALL");
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `
+        <div class="compare-placeholder-card">
+          <div class="placeholder-icon">❌</div>
+          <div class="placeholder-title">Matchup Search Failed</div>
+          <div class="placeholder-desc">${escapeHtml(err.message || "Failed to retrieve player matchup data.")}</div>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderStandaloneMatchupResults(selectedTeam = "ALL") {
+  const container = document.getElementById("oppMatchupResultsContainer");
+  const vsTeams = window._standaloneVsTeams || [];
+  const player = window._standalonePlayer;
+  if (!container || !player) return;
+
+  if (vsTeams.length === 0) {
+    container.innerHTML = `
+      <div class="compare-placeholder-card">
+        <div class="placeholder-icon">🛡️</div>
+        <div class="placeholder-title">${escapeHtml(player.name)} — No Matchup Records</div>
+        <div class="placeholder-desc">No match innings records found for ${escapeHtml(player.name)} against registered teams yet.</div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="head-to-head-card">
+      <div class="h2h-header-grid" style="grid-template-columns: 1fr; margin-bottom: 14px;">
+        <div class="h2h-player-profile">
+          <div class="h2h-avatar-shield p1" style="width: 56px; height: 56px; font-size: 20px;">
+            ${escapeHtml(player.name.split(" ").map(w => w[0]).join("").slice(0, 2))}
+          </div>
+          <div>
+            <div class="h2h-player-name" style="cursor: pointer;" onclick="openPlayerModal(${player.id})">
+              ${escapeHtml(player.name)} <span style="font-size: 14px; color: var(--accent-gold); font-weight: 600;">(${player.overallRating} OVR)</span>
+            </div>
+            <div class="h2h-player-sub">${escapeHtml(player.nationality || player.country)} • ${(player.archetype || "").replace(/_/g, " ").toUpperCase()} • Age ${player.age}</div>
+            <div style="font-size: 12px; color: var(--accent-cyan); margin-top: 2px;">
+              Batting: ${(player.battingStyle || "").replace(/_/g, " ")} | Bowling: ${(player.bowlingStyle || "").replace(/_/g, " ")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="standaloneVsCardContainer">
+        ${renderVsTeamMatchupCardHtml(vsTeams, selectedTeam)}
+      </div>
+
+      <div style="margin-top: 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+        <span>Showing detailed career breakdown against all ${vsTeams.length} opposition teams. Click any team row below to filter:</span>
+      </div>
+
+      <div style="overflow-x: auto; max-height: 340px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+        <table class="card-table">
+          <thead>
+            <tr>
+              <th>Opposition Team</th>
+              <th style="text-align: right;">Mat</th>
+              <th style="text-align: right;">Inn</th>
+              <th style="text-align: right;">Runs</th>
+              <th style="text-align: right;">HS</th>
+              <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
+              <th style="text-align: right;">SR</th>
+              <th style="text-align: right;">100/50</th>
+              <th style="text-align: right;">Wkts</th>
+              <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
+              <th style="text-align: right;">Econ</th>
+              <th style="text-align: right;">BBI</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${vsTeams.map(vt => `
+              <tr class="clickable-row ${selectedTeam === vt.teamName ? 'active-opp' : ''}" onclick="selectStandaloneVsTeamRow('${escapeHtml(vt.teamName)}')" id="standalone-row-${escapeHtml(vt.teamName).replace(/[^a-zA-Z0-9]/g, '_')}">
+                <td style="font-weight: 700; color: #fff;">${escapeHtml(vt.teamName)}</td>
+                <td style="text-align: right;">${vt.matches}</td>
+                <td style="text-align: right;">${vt.batting.innings}</td>
+                <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${vt.batting.runs.toLocaleString()}</td>
+                <td style="text-align: right;">${vt.batting.highestScore}</td>
+                <td style="text-align: right; font-weight: 600; color: var(--accent-green);">${vt.batting.average}</td>
+                <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${vt.batting.strikeRate}</td>
+                <td style="text-align: right; color: var(--text-muted);">${vt.batting.hundreds}/${vt.batting.fifties}</td>
+                <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${vt.bowling.wickets}</td>
+                <td style="text-align: right; font-weight: 600; color: var(--accent-cyan);">${vt.bowling.average}</td>
+                <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${vt.bowling.economy}</td>
+                <td style="text-align: right; font-weight: 600;">${vt.bowling.bestFigures}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function filterStandaloneOppMatchup(teamName) {
+  const cardContainer = document.getElementById("standaloneVsCardContainer");
+  if (cardContainer && window._standaloneVsTeams) {
+    cardContainer.innerHTML = renderVsTeamMatchupCardHtml(window._standaloneVsTeams, teamName);
+  }
+  document.querySelectorAll("#oppMatchupResultsContainer .clickable-row").forEach(tr => tr.classList.remove("active-opp"));
+  if (teamName && teamName !== "ALL") {
+    const slug = teamName.replace(/[^a-zA-Z0-9]/g, "_");
+    const row = document.getElementById(`standalone-row-${slug}`);
+    if (row) row.classList.add("active-opp");
+  }
+}
+
+function selectStandaloneVsTeamRow(teamName) {
+  const sel = document.getElementById("oppTeamSelect");
+  if (sel) sel.value = teamName;
+  filterStandaloneOppMatchup(teamName);
 }
 
 // -----------------------------------------------------------------------------
@@ -1960,6 +2277,13 @@ function renderStandingsTable(rows, title = "", qualifyCount = 4) {
     return `<div style="text-align: center; padding: 24px; color: var(--text-muted);">No standings data available.</div>`;
   }
 
+  const tourneyData = state.activeTournamentData || {};
+  const isTestTourney = Boolean(
+    tourneyData.isTestTourney ||
+    tourneyData.isTest ||
+    (tourneyData.tournament && tourneyData.tournament.type === "test_match")
+  );
+
   return `
     ${title ? `
       <div style="font-family: var(--font-heading); font-size: 15px; font-weight: 700; color: var(--accent-gold); margin: 14px 0 8px 0; display: flex; align-items: center; justify-content: space-between;">
@@ -1978,14 +2302,13 @@ function renderStandingsTable(rows, title = "", qualifyCount = 4) {
             <th style="text-align: center;">L</th>
             <th style="text-align: center;">D/T</th>
             <th style="text-align: right;">PTS</th>
-            <th style="text-align: right;">${(data.isTestTourney || data.isTest || (data.tournament && data.tournament.type === "test_match")) ? "QUOT" : "NRR"}</th>
+            <th style="text-align: right;">${isTestTourney ? "QUOT" : "NRR"}</th>
             <th style="text-align: center;">Recent Form</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((t, idx) => {
             const isQual = Boolean(t.isQualified !== undefined ? t.isQualified : (idx < qualifyCount));
-            const isTestTourney = Boolean(data.isTestTourney || data.isTest || (data.tournament && data.tournament.type === "test_match"));
             let rateVal = "0.000";
             let rateColor = "var(--text-muted)";
             if (isTestTourney) {
@@ -2263,9 +2586,134 @@ function renderTourneySubView() {
 }
 
 // -----------------------------------------------------------------------------
+// Opposition Matchup Helpers & Dynamic Views
+// -----------------------------------------------------------------------------
+function renderVsTeamMatchupCardHtml(vsTeams, selectedTeamName) {
+  if (!vsTeams || vsTeams.length === 0) {
+    return `<div style="padding: 12px; color: var(--text-muted); font-size: 13px;">No opponent records available.</div>`;
+  }
+
+  let bat = { innings: 0, runs: 0, balls: 0, fours: 0, sixes: 0, fifties: 0, hundreds: 0, highestScore: 0, notOuts: 0, average: "-", strikeRate: "-" };
+  let bowl = { innings: 0, overs: "0.0", balls: 0, maidens: 0, runs: 0, wickets: 0, average: "-", economy: "-", bestFigures: "-" };
+  let headerTitle = "";
+  let matchesCount = 0;
+
+  if (!selectedTeamName || selectedTeamName === "ALL") {
+    headerTitle = `All Oppositions Combined (${vsTeams.length} Opponent Teams Faced)`;
+    const matchIds = new Set();
+    let bestW = 0;
+    let bestR = 999;
+
+    for (const t of vsTeams) {
+      matchesCount += t.matches || 0;
+      bat.innings += t.batting.innings || 0;
+      bat.runs += t.batting.runs || 0;
+      bat.balls += t.batting.balls || 0;
+      bat.fours += t.batting.fours || 0;
+      bat.sixes += t.batting.sixes || 0;
+      bat.fifties += t.batting.fifties || 0;
+      bat.hundreds += t.batting.hundreds || 0;
+      if (t.batting.highestScore > bat.highestScore) bat.highestScore = t.batting.highestScore;
+
+      bowl.innings += t.bowling.innings || 0;
+      bowl.balls += t.bowling.balls || 0;
+      bowl.maidens += t.bowling.maidens || 0;
+      bowl.runs += t.bowling.runs || 0;
+      bowl.wickets += t.bowling.wickets || 0;
+    }
+
+    bat.strikeRate = bat.balls > 0 ? ((bat.runs / bat.balls) * 100).toFixed(1) : "-";
+    bat.average = bat.innings > 0 ? (bat.runs / Math.max(1, bat.innings)).toFixed(2) : "-";
+    bowl.overs = formatCricketOvers(null, bowl.balls);
+    bowl.economy = bowl.balls > 0 ? ((bowl.runs / bowl.balls) * 6).toFixed(2) : "-";
+    bowl.average = bowl.wickets > 0 ? (bowl.runs / bowl.wickets).toFixed(2) : "-";
+    bowl.bestFigures = "-";
+  } else {
+    const found = vsTeams.find(t => t.teamName === selectedTeamName);
+    if (found) {
+      headerTitle = `Matchup vs ${found.teamName}`;
+      matchesCount = found.matches;
+      bat = found.batting;
+      bowl = found.bowling;
+    } else {
+      headerTitle = `Matchup vs ${selectedTeamName}`;
+    }
+  }
+
+  return `
+    <div style="font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+      <span>${headerTitle}</span>
+      <span style="font-size: 12px; color: var(--accent-gold); font-weight: 600;">${matchesCount} Matches Contested</span>
+    </div>
+
+    <div class="vs-matchup-card">
+      <div class="vs-subcard">
+        <div class="vs-subcard-title">
+          <span style="color: var(--accent-gold);">🏏 Batting vs Opposition</span>
+          <span style="color: var(--text-muted); font-size: 11px;">${bat.innings} Innings</span>
+        </div>
+        <div class="vs-stat-grid">
+          <div class="vs-stat-item"><span class="vs-stat-label">Runs</span><span class="vs-stat-value" style="color: var(--accent-gold); font-size: 16px;">${bat.runs.toLocaleString()}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Bat Avg</span><span class="vs-stat-value" style="color: var(--accent-green);">${bat.average}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Strike Rate</span><span class="vs-stat-value">${bat.strikeRate}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">High Score</span><span class="vs-stat-value">${bat.highestScore}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">100s / 50s</span><span class="vs-stat-value">${bat.hundreds} / ${bat.fifties}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Boundaries</span><span class="vs-stat-value">${bat.fours}x4 • ${bat.sixes}x6</span></div>
+        </div>
+      </div>
+
+      <div class="vs-subcard">
+        <div class="vs-subcard-title">
+          <span style="color: var(--accent-crimson);">🎯 Bowling vs Opposition</span>
+          <span style="color: var(--text-muted); font-size: 11px;">${bowl.innings} Innings</span>
+        </div>
+        <div class="vs-stat-grid">
+          <div class="vs-stat-item"><span class="vs-stat-label">Wickets</span><span class="vs-stat-value" style="color: var(--accent-crimson); font-size: 16px;">${bowl.wickets}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Bowl Avg</span><span class="vs-stat-value" style="color: var(--accent-cyan);">${bowl.average}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Economy</span><span class="vs-stat-value">${bowl.economy}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Overs Bowled</span><span class="vs-stat-value">${bowl.overs}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Best Figures</span><span class="vs-stat-value">${bowl.bestFigures}</span></div>
+          <div class="vs-stat-item"><span class="vs-stat-label">Maidens / Conceded</span><span class="vs-stat-value">${bowl.maidens}m • ${bowl.runs}r</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderVsTeamCard(teamName) {
+  const container = document.getElementById("vsTeamMatchupCardContainer");
+  if (container && window._currentModalVsTeams) {
+    container.innerHTML = renderVsTeamMatchupCardHtml(window._currentModalVsTeams, teamName);
+  }
+  // Update table row active highlight
+  document.querySelectorAll(".clickable-row").forEach(tr => tr.classList.remove("active-opp"));
+  if (teamName && teamName !== "ALL") {
+    const slug = teamName.replace(/[^a-zA-Z0-9]/g, "_");
+    const row = document.getElementById(`vs-row-${slug}`);
+    if (row) row.classList.add("active-opp");
+  }
+}
+
+function selectVsTeamRow(teamName) {
+  const select = document.getElementById("vsTeamSelect");
+  if (select) select.value = teamName;
+  renderVsTeamCard(teamName);
+}
+
+// -----------------------------------------------------------------------------
 // Player Dossier Modal
 // -----------------------------------------------------------------------------
-async function openPlayerModal(playerId) {
+function switchDossierSection(sectionId) {
+  const sections = ["overview", "matchups", "traits", "recent"];
+  sections.forEach(s => {
+    const btn = document.getElementById(`dossierBtn-${s}`);
+    const el = document.getElementById(`dossierSec-${s}`);
+    if (btn) btn.classList.toggle("active", s === sectionId);
+    if (el) el.style.display = (s === sectionId) ? "block" : "none";
+  });
+}
+
+async function openPlayerModal(playerId, defaultSection = "overview") {
   const modal = document.getElementById("playerModal");
   const modalTitle = document.getElementById("playerModalTitle");
   const modalBody = document.getElementById("playerModalBody");
@@ -2282,8 +2730,14 @@ async function openPlayerModal(playerId) {
 
     const p = data.player;
     const perfs = data.recentPerformances || [];
+    const vsTeams = data.vsTeams || [];
+    window._currentModalVsTeams = vsTeams;
 
     modalTitle.textContent = `${p.name} (${p.country})`;
+
+    const teamsBadges = (p.currentTeams && p.currentTeams.length > 0)
+      ? `<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">${p.currentTeams.map(t => `<span class="team-badge-pill">🛡️ ${escapeHtml(t.name)}</span>`).join("")}</div>`
+      : "";
 
     modalBody.innerHTML = `
       <div class="dossier-hero">
@@ -2292,101 +2746,189 @@ async function openPlayerModal(playerId) {
           <span class="rating-lbl">OVR</span>
         </div>
         <div>
-          <div class="dossier-name">${p.name}</div>
-          <div class="dossier-sub">${p.nationality} • ${(p.archetype || "").replace(/_/g, " ").toUpperCase()} • Age ${p.age}</div>
+          <div class="dossier-name">${escapeHtml(p.name)}</div>
+          <div class="dossier-sub">${escapeHtml(p.nationality || p.country)} • ${(p.archetype || "").replace(/_/g, " ").toUpperCase()} • Age ${p.age}</div>
+          ${teamsBadges}
           <div style="font-size: 13px; color: var(--accent-gold); margin-top: 4px;">
             Batting: ${(p.battingStyle || "").replace(/_/g, " ")} | Bowling: ${(p.bowlingStyle || "").replace(/_/g, " ")}
           </div>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
-        <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Batting Rating</span><span class="metric-val">${p.battingRating}</span></div>
-        <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Bowling Rating</span><span class="metric-val">${p.bowlingRating}</span></div>
-        <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Fielding Rating</span><span class="metric-val">${p.fieldingRating}</span></div>
-        <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Captaincy Rating</span><span class="metric-val">${p.captaincyRating}</span></div>
+      <!-- Dossier Sub-Nav Tab Bar -->
+      <div class="dossier-tab-bar">
+        <button class="dossier-tab-btn" id="dossierBtn-overview" onclick="switchDossierSection('overview')">📋 Career Overview</button>
+        <button class="dossier-tab-btn" id="dossierBtn-matchups" onclick="switchDossierSection('matchups')">⚔️ Opposition Matchups (${vsTeams.length})</button>
+        <button class="dossier-tab-btn" id="dossierBtn-traits" onclick="switchDossierSection('traits')">🧬 Archetype & Traits</button>
+        <button class="dossier-tab-btn" id="dossierBtn-recent" onclick="switchDossierSection('recent')">⚡ Recent Innings (${perfs.length})</button>
       </div>
 
-      <div class="innings-section-title" style="margin-top: 20px;">Player Traits & Characteristics</div>
-      <div class="dossier-traits-container">
-        ${renderDossierTraits(p.traits)}
-      </div>
-
-      <div class="innings-section-title">Career Statistics Across Formats</div>
-      <table class="card-table">
-        <thead>
-          <tr>
-            <th>Format</th>
-            <th style="text-align: right;">Mat</th>
-            <th style="text-align: right;">Runs</th>
-            <th style="text-align: right;">HS</th>
-            <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
-            <th style="text-align: right;">SR</th>
-            <th style="text-align: right;">100s/50s</th>
-            <th style="text-align: right;">Wickets</th>
-            <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
-            <th style="text-align: right;">Econ</th>
-            <th style="text-align: right;">Best Bowling</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style="font-weight: 700; color: #fff;">Short Formats (T20/10/5)</td>
-            <td style="text-align: right;">${p.careerMatches || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.careerRuns || 0).toLocaleString()}</td>
-            <td style="text-align: right;">${p.careerHighestScore || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.careerBattingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerStrikeRate || "-"}</td>
-            <td style="text-align: right; color: var(--text-muted);">${p.careerHundreds || 0} / ${p.careerFifties || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.careerWickets || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.careerBowlingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerEconomy || "-"}</td>
-            <td style="text-align: right; font-weight: 600;">${(p.careerBestFiguresWickets > 0 || p.careerBestFiguresRuns > 0) ? `${p.careerBestFiguresWickets || 0}/${p.careerBestFiguresRuns || 0}` : "-"}</td>
-          </tr>
-          <tr>
-            <td style="font-weight: 700; color: #fff;">One Day Internationals (ODI)</td>
-            <td style="text-align: right;">${p.odiMatches || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.odiRuns || 0).toLocaleString()}</td>
-            <td style="text-align: right;">${p.odiHighestScore || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.odiBattingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiStrikeRate || "-"}</td>
-            <td style="text-align: right; color: var(--text-muted);">${p.odiHundreds || 0} / ${p.odiFifties || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.odiWickets || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.odiBowlingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiEconomy || "-"}</td>
-            <td style="text-align: right; font-weight: 600;">${(p.odiBestFiguresWickets > 0 || p.odiBestFiguresRuns > 0) ? `${p.odiBestFiguresWickets || 0}/${p.odiBestFiguresRuns || 0}` : "-"}</td>
-          </tr>
-          <tr>
-            <td style="font-weight: 700; color: #fff;">Test Matches</td>
-            <td style="text-align: right;">${p.testMatches || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.testRuns || 0).toLocaleString()}</td>
-            <td style="text-align: right;">${p.testHighestScore || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.testBattingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testStrikeRate || "-"}</td>
-            <td style="text-align: right; color: var(--text-muted);">${p.testHundreds || 0} / ${p.testFifties || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.testWickets || 0}</td>
-            <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.testBowlingAvg || "-"}</td>
-            <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testEconomy || "-"}</td>
-            <td style="text-align: right; font-weight: 600;">${(p.testBestFiguresWickets > 0 || p.testBestFiguresRuns > 0) ? `${p.testBestFiguresWickets || 0}/${p.testBestFiguresRuns || 0}` : "-"}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      ${perfs.length > 0 ? `
-        <div class="innings-section-title">Recent Match Contributions</div>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          ${perfs.map(perf => `
-            <div style="background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
-              <span><strong>${perf.opponent}</strong> (${perf.format})</span>
-              <span>
-                ${perf.batting ? `Bat: <strong style="color: var(--accent-gold);">${perf.batting.runs} (${perf.batting.balls}b)</strong>` : ""}
-                ${perf.bowling ? `Bowl: <strong style="color: var(--accent-crimson);">${perf.bowling.wickets}/${perf.bowling.runs} (${perf.bowling.overs} ov)</strong>` : ""}
-              </span>
-            </div>
-          `).join("")}
+      <!-- SECTION 1: OVERVIEW & CAREER STATS -->
+      <div id="dossierSec-overview" class="dossier-section">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+          <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Batting Rating</span><span class="metric-val">${p.battingRating}</span></div>
+          <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Bowling Rating</span><span class="metric-val">${p.bowlingRating}</span></div>
+          <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Fielding Rating</span><span class="metric-val">${p.fieldingRating}</span></div>
+          <div class="rating-metric" style="padding: 10px;"><span class="metric-name">Captaincy Rating</span><span class="metric-val">${p.captaincyRating}</span></div>
         </div>
-      ` : ""}
+
+        <div class="innings-section-title">Career Statistics Across Formats</div>
+        <table class="card-table">
+          <thead>
+            <tr>
+              <th>Format</th>
+              <th style="text-align: right;">Mat</th>
+              <th style="text-align: right;">Runs</th>
+              <th style="text-align: right;">HS</th>
+              <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
+              <th style="text-align: right;">SR</th>
+              <th style="text-align: right;">100s/50s</th>
+              <th style="text-align: right;">Wickets</th>
+              <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
+              <th style="text-align: right;">Econ</th>
+              <th style="text-align: right;">Best Bowling</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="font-weight: 700; color: #fff;">Short Formats (T20/10/5)</td>
+              <td style="text-align: right;">${p.careerMatches || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.careerRuns || 0).toLocaleString()}</td>
+              <td style="text-align: right;">${p.careerHighestScore || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.careerBattingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerStrikeRate || "-"}</td>
+              <td style="text-align: right; color: var(--text-muted);">${p.careerHundreds || 0} / ${p.careerFifties || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.careerWickets || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.careerBowlingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.careerEconomy || "-"}</td>
+              <td style="text-align: right; font-weight: 600;">${(p.careerBestFiguresWickets > 0 || p.careerBestFiguresRuns > 0) ? `${p.careerBestFiguresWickets || 0}/${p.careerBestFiguresRuns || 0}` : "-"}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: 700; color: #fff;">One Day Internationals (ODI)</td>
+              <td style="text-align: right;">${p.odiMatches || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.odiRuns || 0).toLocaleString()}</td>
+              <td style="text-align: right;">${p.odiHighestScore || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.odiBattingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiStrikeRate || "-"}</td>
+              <td style="text-align: right; color: var(--text-muted);">${p.odiHundreds || 0} / ${p.odiFifties || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.odiWickets || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.odiBowlingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.odiEconomy || "-"}</td>
+              <td style="text-align: right; font-weight: 600;">${(p.odiBestFiguresWickets > 0 || p.odiBestFiguresRuns > 0) ? `${p.odiBestFiguresWickets || 0}/${p.odiBestFiguresRuns || 0}` : "-"}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: 700; color: #fff;">Test Matches</td>
+              <td style="text-align: right;">${p.testMatches || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${(p.testRuns || 0).toLocaleString()}</td>
+              <td style="text-align: right;">${p.testHighestScore || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-green); font-family: var(--font-heading); font-size: 14px;">${p.testBattingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testStrikeRate || "-"}</td>
+              <td style="text-align: right; color: var(--text-muted);">${p.testHundreds || 0} / ${p.testFifties || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${p.testWickets || 0}</td>
+              <td style="text-align: right; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-heading); font-size: 14px;">${p.testBowlingAvg || "-"}</td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 12.5px;">${p.testEconomy || "-"}</td>
+              <td style="text-align: right; font-weight: 600;">${(p.testBestFiguresWickets > 0 || p.testBestFiguresRuns > 0) ? `${p.testBestFiguresWickets || 0}/${p.testBestFiguresRuns || 0}` : "-"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- SECTION 2: OPPOSITION MATCHUPS & HEAD TO HEAD -->
+      <div id="dossierSec-matchups" class="dossier-section" style="display: none;">
+        ${vsTeams.length > 0 ? `
+          <div class="vs-teams-header">
+            <div class="innings-section-title" style="margin: 0;">⚔️ Opposition Matchups & Head-to-Head</div>
+            <select id="vsTeamSelect" class="vs-team-select" onchange="renderVsTeamCard(this.value)">
+              <option value="ALL">All Oppositions Combined (${vsTeams.length} Opponents)</option>
+              ${vsTeams.map(vt => `<option value="${escapeHtml(vt.teamName)}">vs ${escapeHtml(vt.teamName)} (${vt.matches} Mat, ${vt.batting.runs} R, ${vt.bowling.wickets} W)</option>`).join("")}
+            </select>
+          </div>
+          <div id="vsTeamMatchupCardContainer">
+            ${renderVsTeamMatchupCardHtml(vsTeams, "ALL")}
+          </div>
+
+          <div style="margin-top: 10px; margin-bottom: 8px; font-size: 11.5px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+            <span>Showing records across all ${vsTeams.length} opponent teams. Click any team row to inspect full head-to-head breakdown.</span>
+          </div>
+
+          <div style="overflow-x: auto; max-height: 280px; overflow-y: auto;">
+            <table class="card-table">
+              <thead>
+                <tr>
+                  <th>Opposition Team</th>
+                  <th style="text-align: right;">Mat</th>
+                  <th style="text-align: right;">Inn</th>
+                  <th style="text-align: right;">Runs</th>
+                  <th style="text-align: right;">HS</th>
+                  <th style="text-align: right; color: var(--accent-green);">Bat Avg</th>
+                  <th style="text-align: right;">SR</th>
+                  <th style="text-align: right;">100/50</th>
+                  <th style="text-align: right;">Wkts</th>
+                  <th style="text-align: right; color: var(--accent-cyan);">Bowl Avg</th>
+                  <th style="text-align: right;">Econ</th>
+                  <th style="text-align: right;">BBI</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${vsTeams.map(vt => `
+                  <tr class="clickable-row" onclick="selectVsTeamRow('${escapeHtml(vt.teamName)}')" id="vs-row-${escapeHtml(vt.teamName).replace(/[^a-zA-Z0-9]/g, '_')}">
+                    <td style="font-weight: 700; color: #fff;">${escapeHtml(vt.teamName)}</td>
+                    <td style="text-align: right;">${vt.matches}</td>
+                    <td style="text-align: right;">${vt.batting.innings}</td>
+                    <td style="text-align: right; font-weight: 700; color: var(--accent-gold);">${vt.batting.runs.toLocaleString()}</td>
+                    <td style="text-align: right;">${vt.batting.highestScore}</td>
+                    <td style="text-align: right; font-weight: 600; color: var(--accent-green);">${vt.batting.average}</td>
+                    <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${vt.batting.strikeRate}</td>
+                    <td style="text-align: right; color: var(--text-muted);">${vt.batting.hundreds}/${vt.batting.fifties}</td>
+                    <td style="text-align: right; font-weight: 700; color: var(--accent-crimson);">${vt.bowling.wickets}</td>
+                    <td style="text-align: right; font-weight: 600; color: var(--accent-cyan);">${vt.bowling.average}</td>
+                    <td style="text-align: right; font-family: var(--font-mono); font-size: 12px;">${vt.bowling.economy}</td>
+                    <td style="text-align: right; font-weight: 600;">${vt.bowling.bestFigures}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `
+          <div class="innings-section-title" style="margin-top: 10px;">⚔️ Opposition Head-to-Head & Matchup Stats</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-muted);">
+            No match innings records found for this player against registered teams.
+          </div>
+        `}
+      </div>
+
+      <!-- SECTION 3: TRAITS & ARCHETYPE -->
+      <div id="dossierSec-traits" class="dossier-section" style="display: none;">
+        <div class="innings-section-title" style="margin-top: 6px;">Player Archetype & Traits</div>
+        <div class="dossier-traits-container">
+          ${renderDossierTraits(p.traits)}
+        </div>
+      </div>
+
+      <!-- SECTION 4: RECENT INNINGS -->
+      <div id="dossierSec-recent" class="dossier-section" style="display: none;">
+        ${perfs.length > 0 ? `
+          <div class="innings-section-title" style="margin-top: 6px;">Recent Match Contributions</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${perfs.map(perf => `
+              <div style="background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                <span><strong>${escapeHtml(perf.opponent)}</strong> (${perf.format})</span>
+                <span>
+                  ${perf.batting ? `Bat: <strong style="color: var(--accent-gold);">${perf.batting.runs} (${perf.batting.balls}b)</strong>` : ""}
+                  ${perf.bowling ? `Bowl: <strong style="color: var(--accent-crimson);">${perf.bowling.wickets}/${perf.bowling.runs} (${perf.bowling.overs} ov)</strong>` : ""}
+                </span>
+              </div>
+            `).join("")}
+          </div>
+        ` : `
+          <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-muted); margin-top: 6px;">
+            No recent match appearances on record.
+          </div>
+        `}
+      </div>
     `;
+
+    switchDossierSection(defaultSection || "overview");
   } catch (err) {
     modalBody.innerHTML = `<div class="loading-state"><p>Failed to load profile: ${err.message}</p></div>`;
   }

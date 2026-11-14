@@ -1261,12 +1261,31 @@ app.get("/api/matches/:id", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
+// 3b. Teams Directory (/api/teams)
+// -----------------------------------------------------------------------------
+app.get("/api/teams", async (req, res) => {
+  try {
+    const teamsRes = await query(`
+      SELECT id, name, short_name as "shortName", tournament_id as "tournamentId", 
+             trophies, trophies_won as "trophiesWon", matches_played as "matchesPlayed", matches_won as "matchesWon"
+      FROM teams
+      ORDER BY name ASC
+    `);
+    res.json({ success: true, teams: teamsRes.rows });
+  } catch (err) {
+    console.error("Error in /api/teams:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to load teams" });
+  }
+});
+
+// -----------------------------------------------------------------------------
 // 4. Players Directory & Enhanced Search (/api/players)
 // -----------------------------------------------------------------------------
 app.get("/api/players", async (req, res) => {
   try {
     const search = req.query.search ? String(req.query.search).trim() : "";
     const country = req.query.country ? String(req.query.country).trim() : "";
+    const team = req.query.team ? String(req.query.team).trim() : "";
     const archetype = req.query.archetype ? String(req.query.archetype).trim() : "";
     const role = req.query.role ? String(req.query.role).trim() : "";
     const trait = req.query.trait ? String(req.query.trait).trim() : "";
@@ -1282,17 +1301,57 @@ app.get("/api/players", async (req, res) => {
     const params = [];
 
     if (search) {
-      params.push(`%${search}%`);
       if (/^\d+$/.test(search)) {
+        params.push(`%${search}%`);
         params.push(Number(search));
-        conditions.push(`(name ILIKE $${params.length - 1} OR id = $${params.length})`);
+        conditions.push(`(name ILIKE $${params.length - 1} OR nationality ILIKE $${params.length - 1} OR id = $${params.length})`);
       } else {
-        conditions.push(`name ILIKE $${params.length}`);
+        // Check if search matches any team name or short_name
+        const teamMatchRes = await query(
+          `SELECT squad, playing_xi FROM teams WHERE name ILIKE $1 OR short_name ILIKE $1 LIMIT 20`,
+          [`%${search}%`]
+        );
+        const searchTeamPids = new Set();
+        for (const tr of teamMatchRes.rows) {
+          if (Array.isArray(tr.squad)) tr.squad.forEach((id) => searchTeamPids.add(Number(id)));
+          if (Array.isArray(tr.playing_xi)) tr.playing_xi.forEach((id) => searchTeamPids.add(Number(id)));
+        }
+
+        params.push(`%${search}%`);
+        const searchParamIdx = params.length;
+
+        if (searchTeamPids.size > 0) {
+          params.push(Array.from(searchTeamPids));
+          const pidsIdx = params.length;
+          conditions.push(`(name ILIKE $${searchParamIdx} OR nationality ILIKE $${searchParamIdx} OR id = ANY($${pidsIdx}::int[]))`);
+        } else {
+          conditions.push(`(name ILIKE $${searchParamIdx} OR nationality ILIKE $${searchParamIdx})`);
+        }
       }
     }
     if (country && country !== "All") {
       params.push(`%${country}%`);
       conditions.push(`nationality ILIKE $${params.length}`);
+    }
+    if (team && team !== "All") {
+      let targetPids = new Set();
+      let teamLookupRes;
+      if (/^\d+$/.test(team)) {
+        teamLookupRes = await query(`SELECT squad, playing_xi FROM teams WHERE id = $1`, [Number(team)]);
+      } else {
+        teamLookupRes = await query(`SELECT squad, playing_xi FROM teams WHERE name ILIKE $1 OR short_name ILIKE $1`, [`%${team}%`]);
+      }
+      for (const tr of teamLookupRes.rows) {
+        if (Array.isArray(tr.squad)) tr.squad.forEach((id) => targetPids.add(Number(id)));
+        if (Array.isArray(tr.playing_xi)) tr.playing_xi.forEach((id) => targetPids.add(Number(id)));
+      }
+
+      if (targetPids.size > 0) {
+        params.push(Array.from(targetPids));
+        conditions.push(`id = ANY($${params.length}::int[])`);
+      } else {
+        conditions.push("1 = 0");
+      }
     }
     if (archetype && archetype !== "All") {
       params.push(archetype);
@@ -1352,6 +1411,26 @@ app.get("/api/players", async (req, res) => {
       params
     );
 
+    // Map player IDs to teams
+    const pagePlayerIds = playersRes.rows.map((p) => p.id);
+    const playerTeamsMap = new Map();
+    if (pagePlayerIds.length > 0) {
+      const allTeamsRes = await query(`SELECT id, name, short_name, squad, playing_xi FROM teams`);
+      for (const tm of allTeamsRes.rows) {
+        const teamSet = new Set([
+          ...(Array.isArray(tm.squad) ? tm.squad : []),
+          ...(Array.isArray(tm.playing_xi) ? tm.playing_xi : []),
+        ]);
+        for (const pid of pagePlayerIds) {
+          if (teamSet.has(pid)) {
+            const list = playerTeamsMap.get(pid) || [];
+            if (!list.includes(tm.name)) list.push(tm.name);
+            playerTeamsMap.set(pid, list);
+          }
+        }
+      }
+    }
+
     const formatted = playersRes.rows.map((p) => ({
       id: p.id,
       name: p.name,
@@ -1368,6 +1447,8 @@ app.get("/api/players", async (req, res) => {
       fieldingRating: p.fielding_rating,
       captaincyRating: p.captaincy_rating,
       traits: extractPlayerTraits(p),
+      teams: playerTeamsMap.get(p.id) || [],
+      primaryTeam: (playerTeamsMap.get(p.id) || [])[0] || null,
       stats: {
         matches: (p.career_matches || 0) + (p.odi_matches || 0) + (p.test_matches || 0),
         runs: (p.career_runs || 0) + (p.odi_runs || 0) + (p.test_runs || 0),
@@ -1710,6 +1791,197 @@ app.get("/api/players/:id", async (req, res) => {
       return (((Number(runsConceded) || 0) / b) * 6).toFixed(2);
     };
 
+    // Current Teams the player is part of
+    const playerTeamsRes = await query(
+      `SELECT id, name, short_name as "shortName", tournament_id as "tournamentId" 
+       FROM teams 
+       WHERE squad @> $1::jsonb OR playing_xi @> $1::jsonb`,
+      [JSON.stringify([id])]
+    );
+
+    // Opposition Matchup Records (Head-to-Head vs each opponent team)
+    const vsQuery = await query(
+      `SELECT 
+        mi.id,
+        mi.match_id,
+        mi.batting_team_id,
+        mi.bowling_team_id,
+        m.team_a_id,
+        m.team_a_name,
+        m.team_b_id,
+        m.team_b_name,
+        m.format,
+        mi.batting_card,
+        mi.bowling_card
+      FROM match_innings mi
+      JOIN matches m ON m.id = mi.match_id
+      WHERE mi.batting_card @> $1::jsonb
+         OR mi.bowling_card @> $1::jsonb`,
+      [JSON.stringify([{ playerId: id }])]
+    );
+
+    const vsTeamsMap = {};
+
+    for (const row of vsQuery.rows) {
+      const batCard = Array.isArray(row.batting_card) ? row.batting_card : [];
+      const bowlCard = Array.isArray(row.bowling_card) ? row.bowling_card : [];
+      const myBat = batCard.find((b) => b.playerId === id);
+      const myBowl = bowlCard.find((w) => w.playerId === id);
+
+      if (myBat) {
+        const oppTeamId = row.bowling_team_id;
+        const oppTeamName =
+          oppTeamId === row.team_a_id
+            ? row.team_a_name
+            : oppTeamId === row.team_b_id
+            ? row.team_b_name
+            : `Team #${oppTeamId}`;
+
+        if (!vsTeamsMap[oppTeamName]) {
+          vsTeamsMap[oppTeamName] = {
+            teamName: oppTeamName,
+            teamId: oppTeamId,
+            matches: new Set(),
+            batInnings: 0,
+            runs: 0,
+            balls: 0,
+            fours: 0,
+            sixes: 0,
+            fifties: 0,
+            hundreds: 0,
+            highScore: 0,
+            notOuts: 0,
+            bowlInnings: 0,
+            totalBallsBowled: 0,
+            maidens: 0,
+            bowlRuns: 0,
+            wickets: 0,
+            bestW: 0,
+            bestR: 999,
+          };
+        }
+        vsTeamsMap[oppTeamName].matches.add(row.match_id);
+        vsTeamsMap[oppTeamName].batInnings++;
+        const r = Number(myBat.runs) || 0;
+        const b = Number(myBat.balls) || 0;
+        vsTeamsMap[oppTeamName].runs += r;
+        vsTeamsMap[oppTeamName].balls += b;
+        vsTeamsMap[oppTeamName].fours += Number(myBat.fours) || 0;
+        vsTeamsMap[oppTeamName].sixes += Number(myBat.sixes) || 0;
+        if (r >= 100) vsTeamsMap[oppTeamName].hundreds++;
+        else if (r >= 50) vsTeamsMap[oppTeamName].fifties++;
+        if (r > vsTeamsMap[oppTeamName].highScore) vsTeamsMap[oppTeamName].highScore = r;
+        const isOut =
+          myBat.dismissal &&
+          myBat.dismissal.toLowerCase() !== "not out" &&
+          myBat.dismissal.toLowerCase() !== "retired hurt";
+        if (!isOut) vsTeamsMap[oppTeamName].notOuts++;
+      }
+
+      if (myBowl) {
+        const oppTeamId = row.batting_team_id;
+        const oppTeamName =
+          oppTeamId === row.team_a_id
+            ? row.team_a_name
+            : oppTeamId === row.team_b_id
+            ? row.team_b_name
+            : `Team #${oppTeamId}`;
+
+        if (!vsTeamsMap[oppTeamName]) {
+          vsTeamsMap[oppTeamName] = {
+            teamName: oppTeamName,
+            teamId: oppTeamId,
+            matches: new Set(),
+            batInnings: 0,
+            runs: 0,
+            balls: 0,
+            fours: 0,
+            sixes: 0,
+            fifties: 0,
+            hundreds: 0,
+            highScore: 0,
+            notOuts: 0,
+            bowlInnings: 0,
+            totalBallsBowled: 0,
+            maidens: 0,
+            bowlRuns: 0,
+            wickets: 0,
+            bestW: 0,
+            bestR: 999,
+          };
+        }
+        vsTeamsMap[oppTeamName].matches.add(row.match_id);
+        vsTeamsMap[oppTeamName].bowlInnings++;
+
+        const w = Number(myBowl.wickets) || 0;
+        const r = Number(myBowl.runs) || 0;
+        const m = Number(myBowl.maidens) || 0;
+
+        let ballsBowled = 0;
+        if (myBowl.balls !== undefined && myBowl.balls !== null) {
+          ballsBowled = Number(myBowl.balls) || 0;
+        } else if (myBowl.overs !== undefined && myBowl.overs !== null) {
+          const ov = Number(myBowl.overs) || 0;
+          const fullOvers = Math.floor(ov);
+          const remBalls = Math.round((ov - fullOvers) * 10);
+          ballsBowled = fullOvers * 6 + Math.min(remBalls, 5);
+        }
+
+        vsTeamsMap[oppTeamName].totalBallsBowled += ballsBowled;
+        vsTeamsMap[oppTeamName].wickets += w;
+        vsTeamsMap[oppTeamName].bowlRuns += r;
+        vsTeamsMap[oppTeamName].maidens += m;
+        if (
+          w > vsTeamsMap[oppTeamName].bestW ||
+          (w === vsTeamsMap[oppTeamName].bestW && r < vsTeamsMap[oppTeamName].bestR)
+        ) {
+          vsTeamsMap[oppTeamName].bestW = w;
+          vsTeamsMap[oppTeamName].bestR = r;
+        }
+      }
+    }
+
+    const vsTeamsList = Object.values(vsTeamsMap).map((t) => {
+      const dismissals = Math.max(0, t.batInnings - t.notOuts);
+      const batAvg = dismissals > 0 ? (t.runs / dismissals).toFixed(2) : (t.runs > 0 ? `${t.runs}.00*` : "-");
+      const sr = t.balls > 0 ? ((t.runs / t.balls) * 100).toFixed(1) : "-";
+      const bowlAvg = t.wickets > 0 ? (t.bowlRuns / t.wickets).toFixed(2) : "-";
+      const econ = t.totalBallsBowled > 0 ? ((t.bowlRuns / t.totalBallsBowled) * 6).toFixed(2) : "-";
+      const bestFig = t.bestW > 0 ? `${t.bestW}/${t.bestR}` : (t.bowlInnings > 0 ? `0/${t.bowlRuns}` : "-");
+
+      return {
+        teamName: t.teamName,
+        teamId: t.teamId,
+        matches: t.matches.size,
+        batting: {
+          innings: t.batInnings,
+          runs: t.runs,
+          balls: t.balls,
+          highestScore: t.highScore,
+          fours: t.fours,
+          sixes: t.sixes,
+          fifties: t.fifties,
+          hundreds: t.hundreds,
+          average: batAvg,
+          strikeRate: sr,
+        },
+        bowling: {
+          innings: t.bowlInnings,
+          overs: formatCricketOvers(null, t.totalBallsBowled),
+          balls: t.totalBallsBowled,
+          maidens: t.maidens,
+          runs: t.bowlRuns,
+          wickets: t.wickets,
+          average: bowlAvg,
+          economy: econ,
+          bestFigures: bestFig,
+        },
+        activityScore: t.runs * 2 + t.wickets * 40 + t.matches.size * 10,
+      };
+    });
+
+    vsTeamsList.sort((a, b) => b.activityScore - a.activityScore);
+
     res.json({
       success: true,
       player: {
@@ -1718,6 +1990,7 @@ app.get("/api/players/:id", async (req, res) => {
         age: player.age,
         nationality: player.nationality,
         country: formatCountry(player.nationality),
+        currentTeams: playerTeamsRes.rows,
         archetype: player.archetype,
         battingStyle: player.batting_style,
         bowlingStyle: player.bowling_style,
@@ -1778,6 +2051,7 @@ app.get("/api/players/:id", async (req, res) => {
         testBestFiguresWickets: player.test_best_figures_wickets || 0,
         testBestFiguresRuns: player.test_best_figures_runs || 0,
       },
+      vsTeams: vsTeamsList,
       recentPerformances: performances,
     });
   } catch (err) {
@@ -2387,8 +2661,11 @@ app.get("/api/tournaments", async (req, res) => {
       const upper = t.id.toUpperCase();
       let category = "t20_leagues";
       if (
-        ["ODIWC", "T20WC", "INTL", "INTL50", "INTLTEST", "WTC", "AC"].includes(upper) ||
-        upper.startsWith("INTL")
+        ["ODIWC", "T20WC", "INTL", "INTL50", "INTLTEST", "WTC", "AC", "SC"].includes(upper) ||
+        upper.startsWith("INTL") ||
+        upper === "SC" ||
+        upper.startsWith("SC_") ||
+        (t.name && t.name.toLowerCase().includes("sena"))
       ) {
         category = "international";
       } else if (

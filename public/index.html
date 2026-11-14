@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="icon" type="image/png" href="assets/logo.png">
   <link rel="apple-touch-icon" href="assets/logo.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 <body>
   <!-- GitHub Pages Notice Banner (shown only on github.io if API disconnected) -->
@@ -56,7 +56,7 @@
           <span class="nav-icon">👥</span> Player Stats
         </button>
         <button class="nav-btn" data-tab="compare" onclick="switchTab('compare')">
-          <span class="nav-icon">⚔️</span> Compare
+          <span class="nav-icon">⚔️</span> Head-to-Head
         </button>
         <button class="nav-btn" data-tab="rankings" onclick="switchTab('rankings')">
           <span class="nav-icon">🏆</span> Rankings
@@ -145,7 +145,7 @@
       <div class="players-toolbar">
         <div class="search-box">
           <span class="search-icon">🔍</span>
-          <input type="text" id="playerSearchInput" placeholder="Search player by name (e.g. Matthew Botha, Tanay Jain, Qais Farahi)...">
+          <input type="text" id="playerSearchInput" placeholder="Search by player name, nation, or team (e.g. Matthew Botha, South Africa, Sydney Sixers)...">
         </div>
 
         <div class="select-filters">
@@ -167,6 +167,13 @@
               <option value="Hong Kong">Hong Kong</option>
               <option value="Ireland">Ireland</option>
               <option value="Zimbabwe">Zimbabwe</option>
+            </select>
+          </div>
+
+          <div class="custom-select-wrap">
+            <label>Team / Franchise</label>
+            <select id="teamSelect" onchange="applyPlayerFilters()">
+              <option value="All">All Teams</option>
             </select>
           </div>
 
@@ -279,67 +286,130 @@
       <div id="playersPagination" class="pagination-bar"></div>
     </section>
 
-    <!-- TAB 4: PLAYER COMPARISON (HEAD TO HEAD) -->
+    <!-- TAB 4: PLAYER COMPARISON (HEAD TO HEAD & OPPOSITION MATCHUPS) -->
     <section id="tab-compare" class="tab-section hidden">
       <div class="section-header">
         <div>
-          <h1 class="section-title">Head-to-Head Player Comparison</h1>
-          <p class="section-subtitle">Compare any two players side-by-side across ratings, career numbers, formats, and specialized traits</p>
+          <h1 class="section-title">Head-to-Head & Opposition Matchups</h1>
+          <p class="section-subtitle">Compare any two players side-by-side or inspect a player's complete matchup record against opposition teams</p>
         </div>
       </div>
 
-      <!-- Compare Selector Toolbar -->
-      <div class="compare-selector-card">
-        <div class="compare-inputs-grid">
-          <div class="compare-input-col">
-            <label class="compare-col-label">Player 1</label>
-            <div class="compare-search-input-wrap">
-              <input type="text" id="compareP1Input" placeholder="Enter name or ID (e.g. Matthew Botha)" autocomplete="off">
-              <div id="compareP1Dropdown" class="autocomplete-dropdown hidden"></div>
-            </div>
-          </div>
-
-          <div class="compare-vs-divider">
-            <span class="vs-circle">VS</span>
-          </div>
-
-          <div class="compare-input-col">
-            <label class="compare-col-label">Player 2</label>
-            <div class="compare-search-input-wrap">
-              <input type="text" id="compareP2Input" placeholder="Enter name or ID (e.g. Tanay Jain, Qais Farahi)" autocomplete="off">
-              <div id="compareP2Dropdown" class="autocomplete-dropdown hidden"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="compare-actions-bar">
-          <div class="compare-format-pills">
-            <span class="format-filter-lbl">Format:</span>
-            <button class="format-pill active" data-format="all" onclick="setCompareFormat('all')">All Formats</button>
-            <button class="format-pill" data-format="short" onclick="setCompareFormat('short')">Short (T20/T10)</button>
-            <button class="format-pill" data-format="odi" onclick="setCompareFormat('odi')">ODI (50-Over)</button>
-            <button class="format-pill" data-format="test" onclick="setCompareFormat('test')">Test Matches</button>
-          </div>
-
-          <div class="compare-quick-picks">
-            <span class="quick-pick-lbl">Quick Matchups:</span>
-            <button class="quick-pick-btn" onclick="quickCompare('Matthew Botha', 'Tanay Jain')">Botha vs Jain</button>
-            <button class="quick-pick-btn" onclick="quickCompare('Qais Farahi', 'Matthew Botha')">Farahi vs Botha</button>
-            <button class="quick-pick-btn" onclick="quickCompare('Kabir Kohli', 'Liam Vance')">Kohli vs Vance</button>
-          </div>
-
-          <button class="compare-run-btn" onclick="runPlayerComparison()">
-            <span>⚔️ Compare Players</span>
+      <!-- Mode Toggle: Duel vs Opposition Matchups -->
+      <div class="rankings-mode-toggle-wrap" style="margin-bottom: 20px;">
+        <div class="mode-toggle-pills">
+          <button class="mode-pill-btn active" id="btnH2HDuel" onclick="switchH2HMode('duel')">
+            👥 Player vs Player Duel
+          </button>
+          <button class="mode-pill-btn" id="btnH2HOppositions" onclick="switchH2HMode('opposition')">
+            ⚔️ Player vs Opposition Team Matchups
           </button>
         </div>
       </div>
 
-      <!-- Compare Results Container -->
-      <div id="compareResultsContainer" class="compare-results-area">
-        <div class="compare-placeholder-card">
-          <div class="placeholder-icon">⚔️</div>
-          <div class="placeholder-title">Select Two Players to Compare</div>
-          <div class="placeholder-desc">Type names above or click one of the quick matchups to analyze side-by-side batting, bowling, ratings, traits, and advantages.</div>
+      <!-- VIEW 1: PLAYER VS PLAYER DUEL -->
+      <div id="playerVsPlayerArea">
+        <!-- Compare Selector Toolbar -->
+        <div class="compare-selector-card">
+          <div class="compare-inputs-grid">
+            <div class="compare-input-col">
+              <label class="compare-col-label">Player 1</label>
+              <div class="compare-search-input-wrap">
+                <input type="text" id="compareP1Input" placeholder="Enter name or ID (e.g. Matthew Botha)" autocomplete="off">
+                <div id="compareP1Dropdown" class="autocomplete-dropdown hidden"></div>
+              </div>
+            </div>
+
+            <div class="compare-vs-divider">
+              <span class="vs-circle">VS</span>
+            </div>
+
+            <div class="compare-input-col">
+              <label class="compare-col-label">Player 2</label>
+              <div class="compare-search-input-wrap">
+                <input type="text" id="compareP2Input" placeholder="Enter name or ID (e.g. Tanay Jain, Qais Farahi)" autocomplete="off">
+                <div id="compareP2Dropdown" class="autocomplete-dropdown hidden"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="compare-actions-bar">
+            <div class="compare-format-pills">
+              <span class="format-filter-lbl">Format:</span>
+              <button class="format-pill active" data-format="all" onclick="setCompareFormat('all')">All Formats</button>
+              <button class="format-pill" data-format="short" onclick="setCompareFormat('short')">Short (T20/T10)</button>
+              <button class="format-pill" data-format="odi" onclick="setCompareFormat('odi')">ODI (50-Over)</button>
+              <button class="format-pill" data-format="test" onclick="setCompareFormat('test')">Test Matches</button>
+            </div>
+
+            <div class="compare-quick-picks">
+              <span class="quick-pick-lbl">Quick Matchups:</span>
+              <button class="quick-pick-btn" onclick="quickCompare('Matthew Botha', 'Tanay Jain')">Botha vs Jain</button>
+              <button class="quick-pick-btn" onclick="quickCompare('Qais Farahi', 'Matthew Botha')">Farahi vs Botha</button>
+              <button class="quick-pick-btn" onclick="quickCompare('Kabir Kohli', 'Liam Vance')">Kohli vs Vance</button>
+            </div>
+
+            <button class="compare-run-btn" onclick="runPlayerComparison()">
+              <span>⚔️ Compare Players</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Compare Results Container -->
+        <div id="compareResultsContainer" class="compare-results-area">
+          <div class="compare-placeholder-card">
+            <div class="placeholder-icon">⚔️</div>
+            <div class="placeholder-title">Select Two Players to Compare</div>
+            <div class="placeholder-desc">Type names above or click one of the quick matchups to analyze side-by-side batting, bowling, ratings, traits, and advantages.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: PLAYER VS OPPOSITION TEAM MATCHUPS -->
+      <div id="playerVsTeamArea" class="hidden">
+        <div class="compare-selector-card">
+          <div class="compare-inputs-grid" style="grid-template-columns: 1.2fr 1fr; align-items: end;">
+            <div class="compare-input-col">
+              <label class="compare-col-label">Select Player</label>
+              <div class="compare-search-input-wrap">
+                <input type="text" id="oppPlayerInput" placeholder="Search player (e.g. Matthew Botha, Tanay Jain)" autocomplete="off">
+                <div id="oppPlayerDropdown" class="autocomplete-dropdown hidden"></div>
+              </div>
+            </div>
+
+            <div class="compare-input-col">
+              <label class="compare-col-label">Filter Opposition Team</label>
+              <div class="custom-select-wrap" style="width: 100%;">
+                <select id="oppTeamSelect" class="form-select" onchange="filterStandaloneOppMatchup(this.value)" style="width: 100%; height: 42px; background: rgba(0,0,0,0.3); color: #fff; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0 12px; font-weight: 600; font-size: 13px;">
+                  <option value="ALL">All Oppositions Combined</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="compare-actions-bar" style="margin-top: 14px;">
+            <div class="compare-quick-picks">
+              <span class="quick-pick-lbl">Quick Stars:</span>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Matthew Botha')">Matthew Botha</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Tanay Jain')">Tanay Jain</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Qais Farahi')">Qais Farahi</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Kabir Kohli')">Kabir Kohli</button>
+              <button class="quick-pick-btn" onclick="quickLoadOppMatchup('Liam Vance')">Liam Vance</button>
+            </div>
+
+            <button class="compare-run-btn" onclick="loadStandaloneOppMatchup()">
+              <span>🔍 View Matchups</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Opposition Matchup Results Container -->
+        <div id="oppMatchupResultsContainer" class="compare-results-area">
+          <div class="compare-placeholder-card">
+            <div class="placeholder-icon">⚔️</div>
+            <div class="placeholder-title">Select a Player to View Opposition Matchups</div>
+            <div class="placeholder-desc">Analyze how any player performs against individual franchise or national opposition teams across their career (runs, wickets, averages, economy, and best figures).</div>
+          </div>
         </div>
       </div>
     </section>
@@ -627,6 +697,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.2"></script>
 </body>
 </html>

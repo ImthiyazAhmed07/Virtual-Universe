@@ -3246,3 +3246,152 @@ input:checked + .slider:before { transform: translateX(14px); }
 }
 
 
+
+/* Opposition Head-to-Head & Matchup Styles */
+.vs-teams-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.vs-team-select {
+  padding: 6px 12px;
+  background: rgba(18, 24, 38, 0.9);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--accent-gold);
+  font-weight: 600;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.vs-matchup-card {
+  background: linear-gradient(135deg, rgba(20, 27, 45, 0.7), rgba(12, 17, 30, 0.9));
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.vs-subcard {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.vs-subcard-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.vs-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.vs-stat-item {
+  display: flex;
+  flex-direction: column;
+}
+.vs-stat-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.vs-stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: #fff;
+}
+.team-badge-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 12px;
+  color: var(--accent-cyan);
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 6px;
+  margin-top: 4px;
+}
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.clickable-row:hover {
+  background: rgba(255, 215, 0, 0.08) !important;
+}
+.clickable-row.active-opp {
+  background: rgba(255, 215, 0, 0.15) !important;
+  border-left: 3px solid var(--accent-gold);
+}
+
+/* Dossier Sub-Nav Tab Bar */
+.dossier-tab-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px;
+  overflow-x: auto;
+}
+.dossier-tab-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.dossier-tab-btn:hover,
+.dossier-tab-btn.active {
+  background: linear-gradient(135deg, rgba(255, 42, 95, 0.25), rgba(255, 215, 0, 0.15));
+  color: var(--accent-gold);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+}
+
+/* Card Action Buttons */
+.card-action-btn-sm {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.card-action-btn-sm:hover {
+  background: rgba(255, 215, 0, 0.12);
+  color: var(--accent-gold);
+  border-color: var(--accent-gold);
+}
+.card-action-btn-sm.matchup {
+  border-color: rgba(255, 42, 95, 0.35);
+  color: #ff809b;
+}
+.card-action-btn-sm.matchup:hover {
+  background: rgba(255, 42, 95, 0.2);
+  color: #fff;
+  border-color: var(--accent-crimson);
+}
