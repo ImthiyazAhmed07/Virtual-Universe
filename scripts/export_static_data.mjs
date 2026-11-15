@@ -230,11 +230,11 @@ async function main() {
   });
   console.log("   ✅ Saved data/players_all.json");
 
-  // 7. Player Details & Opposition Matchups (Top 350 star players)
-  console.log("7. Exporting individual player dossiers with concurrency 20...");
-  const playersToExport = allPlayersFormatted.slice(0, 350); // top 350 star players
+  // 7. Player Details & Opposition Matchups (All players)
+  console.log("7. Exporting individual player dossiers with concurrency 25...");
+  const playersToExport = allPlayersFormatted; // all 1,320 players
   let pExported = 0;
-  await runConcurrent(playersToExport, 20, async (p) => {
+  await runConcurrent(playersToExport, 25, async (p) => {
     try {
       const detail = await fetchJson(`/api/players/${p.id}`);
       writeJson(`players/${p.id}.json`, detail);

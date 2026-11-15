@@ -55,25 +55,47 @@ const state = {
 };
 
 // -----------------------------------------------------------------------------
+// Universal HTML Sanitization Helper
+// -----------------------------------------------------------------------------
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+window.escapeHtml = escapeHtml;
+
+// -----------------------------------------------------------------------------
 // Universal API Base Configuration (Localhost / Remote Hosting / GitHub Pages)
 // -----------------------------------------------------------------------------
 function getApiBase() {
-  if (window.VIRTUAL_CRICKET_API) return window.VIRTUAL_CRICKET_API.replace(/\/+$/, "");
-  const stored = localStorage.getItem("VC_API_URL");
-  if (stored) return stored.trim().replace(/\/+$/, "");
+  if (typeof window !== "undefined" && window.VIRTUAL_CRICKET_API) return window.VIRTUAL_CRICKET_API.replace(/\/+$/, "");
+  try {
+    if (typeof localStorage !== "undefined" && localStorage) {
+      const stored = localStorage.getItem("VC_API_URL");
+      if (stored) return stored.trim().replace(/\/+$/, "");
+    }
+  } catch {}
   return "";
 }
 
 function setApiBase(url) {
-  if (!url || !url.trim()) {
-    localStorage.removeItem("VC_API_URL");
-  } else {
-    let clean = url.trim().replace(/\/+$/, "");
-    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
-      clean = "https://" + clean;
+  try {
+    if (typeof localStorage !== "undefined" && localStorage) {
+      if (!url || !url.trim()) {
+        localStorage.removeItem("VC_API_URL");
+      } else {
+        let clean = url.trim().replace(/\/+$/, "");
+        if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+          clean = "https://" + clean;
+        }
+        localStorage.setItem("VC_API_URL", clean);
+      }
     }
-    localStorage.setItem("VC_API_URL", clean);
-  }
+  } catch {}
   updateApiStatusIndicator();
   closeModal("apiConfigModal");
   // Reload current views
@@ -86,12 +108,42 @@ function isStaticHostingEnvironment() {
   return host.endsWith("github.io") || window.location.protocol === "file:" || Boolean(window.FORCE_STATIC_MODE);
 }
 
+// Universal resilient static dataset fetcher (GitHub Pages subpaths + root + relative)
+async function safeFetchData(relPath) {
+  const clean = relPath.replace(/^\/+/, "").replace(/^data\//, "");
+  const host = (window.location.hostname || "").toLowerCase();
+  const path = window.location.pathname || "/";
+  const origin = window.location.origin || "";
+
+  const candidates = [];
+  if (host.endsWith("github.io") || path.includes("/Virtual-Universe")) {
+    candidates.push(`/Virtual-Universe/data/${clean}`);
+    if (origin && origin !== "null") {
+      candidates.push(`${origin}/Virtual-Universe/data/${clean}`);
+    }
+  }
+  candidates.push(`/data/${clean}`);
+  candidates.push(`data/${clean}`);
+  candidates.push(`./data/${clean}`);
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res;
+    } catch (e) {}
+  }
+  return new Response(JSON.stringify({ success: false, error: `Dataset ${clean} not found` }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
 // In-memory cache for all players dataset
 let _staticAllPlayersCache = null;
 async function getStaticAllPlayers() {
   if (_staticAllPlayersCache) return _staticAllPlayersCache;
   try {
-    const res = await fetch("data/players_all.json");
+    const res = await safeFetchData("players_all.json");
     if (res.ok) {
       const data = await res.json();
       _staticAllPlayersCache = data.players || [];
@@ -110,11 +162,149 @@ function makeJsonResponse(data, status = 200) {
   });
 }
 
+// Intelligent format- & role-aware cricket comparison verdict
+function generateComparisonVerdict(p1, p2, st1 = {}, st2 = {}, fmtLabel = "All Formats") {
+  const p1Bat = Number(p1.battingRating ?? p1.batting_rating) || 0;
+  const p2Bat = Number(p2.battingRating ?? p2.batting_rating) || 0;
+  const p1Bowl = Number(p1.bowlingRating ?? p1.bowling_rating) || 0;
+  const p2Bowl = Number(p2.bowlingRating ?? p2.bowling_rating) || 0;
+  const p1Ovr = Number(p1.overallRating ?? p1.overall_rating) || 0;
+  const p2Ovr = Number(p2.overallRating ?? p2.overall_rating) || 0;
+
+  const p1Runs = Number(st1.runs) || 0;
+  const p2Runs = Number(st2.runs) || 0;
+  const p1Avg = parseFloat(st1.battingAvg) || 0;
+  const p2Avg = parseFloat(st2.battingAvg) || 0;
+  const p1SR = parseFloat(st1.strikeRate) || 0;
+  const p2SR = parseFloat(st2.strikeRate) || 0;
+
+  const p1Wkts = Number(st1.wickets) || 0;
+  const p2Wkts = Number(st2.wickets) || 0;
+  const p1BowlAvg = parseFloat(st1.bowlingAvg) || 0;
+  const p2BowlAvg = parseFloat(st2.bowlingAvg) || 0;
+  const p1Econ = parseFloat(st1.economy) || 0;
+  const p2Econ = parseFloat(st2.economy) || 0;
+
+  const p1Matches = Number(st1.matches) || 0;
+  const p2Matches = Number(st2.matches) || 0;
+
+  // 0. Format awareness: if neither has played in this format
+  if (p1Matches === 0 && p2Matches === 0) {
+    if (p1Ovr !== p2Ovr) {
+      const better = p1Ovr > p2Ovr ? p1 : p2;
+      const bOvr = better.overallRating ?? better.overall_rating;
+      return `Neither player has contested matches in ${fmtLabel} yet. Based on core ratings, ${better.name} (${bOvr} OVR) carries the theoretical advantage.`;
+    }
+    return `Neither player has made an appearance in ${fmtLabel} yet. Both enter with equal core ratings (${p1Ovr} OVR).`;
+  }
+
+  // Check archetypes and ratings for role detection
+  const isP1Batter = p1Bat >= 70 && p1Bat >= p1Bowl + 10;
+  const isP2Batter = p2Bat >= 70 && p2Bat >= p2Bowl + 10;
+  const isP1Bowler = p1Bowl >= 70 && p1Bowl >= p1Bat + 10;
+  const isP2Bowler = p2Bowl >= 70 && p2Bowl >= p2Bat + 10;
+
+  // 1. Pure Batter vs Pure Bowler (Contrasting specializations)
+  if ((isP1Batter && isP2Bowler) || (isP1Bowler && isP2Batter)) {
+    const batP = isP1Batter ? p1 : p2;
+    const batS = isP1Batter ? st1 : st2;
+    const batR = isP1Batter ? p1Bat : p2Bat;
+    const bowlP = isP1Bowler ? p1 : p2;
+    const bowlS = isP1Bowler ? st1 : st2;
+    const bowlR = isP1Bowler ? p1Bowl : p2Bowl;
+    const batSummary = batS.matches > 0 ? `${(batS.runs || 0).toLocaleString()} runs @ ${batS.battingAvg || "-"} avg` : `${batR} BAT rating`;
+    const bowlSummary = bowlS.matches > 0 ? `${bowlS.wickets || 0} wkts @ ${bowlS.economy || "-"} econ` : `${bowlR} BOWL rating`;
+    return `Contrasting Specializations — ${batP.name} commands the batting department (${batSummary}), while ${bowlP.name} spearheads the bowling assault (${bowlSummary}).`;
+  }
+
+  // 2. Both primarily Batters
+  if (isP1Batter && isP2Batter) {
+    if ((p1Runs > p2Runs && p1Avg >= p2Avg) || (p1Avg > p2Avg && p1Runs >= p2Runs)) {
+      const margin = p1Runs > p2Runs ? `${p1Runs.toLocaleString()} runs @ ${p1Avg} avg vs ${p2Runs.toLocaleString()} runs @ ${p2Avg} avg` : `superior average of ${p1Avg} vs ${p2Avg}`;
+      return `${p1.name} holds the clear batting advantage in ${fmtLabel} (${margin}).`;
+    }
+    if ((p2Runs > p1Runs && p2Avg >= p1Avg) || (p2Avg > p1Avg && p2Runs >= p1Runs)) {
+      const margin = p2Runs > p1Runs ? `${p2Runs.toLocaleString()} runs @ ${p2Avg} avg vs ${p1Runs.toLocaleString()} runs @ ${p1Avg} avg` : `superior average of ${p2Avg} vs ${p1Avg}`;
+      return `${p2.name} holds the clear batting advantage in ${fmtLabel} (${margin}).`;
+    }
+    if (p1Runs > p2Runs && p2Avg > p1Avg) {
+      return `Competitive Batting Split — ${p1.name} leads in career volume (${p1Runs.toLocaleString()} vs ${p2Runs.toLocaleString()} runs), while ${p2.name} boasts higher scoring consistency (${p2Avg} vs ${p1Avg} avg).`;
+    }
+    if (p2Runs > p1Runs && p1Avg > p2Avg) {
+      return `Competitive Batting Split — ${p2.name} leads in career volume (${p2Runs.toLocaleString()} vs ${p1Runs.toLocaleString()} runs), while ${p1.name} boasts higher scoring consistency (${p1Avg} vs ${p2Avg} avg).`;
+    }
+    if (p1Bat !== p2Bat) {
+      const better = p1Bat > p2Bat ? p1 : p2;
+      const worse = p1Bat > p2Bat ? p2 : p1;
+      const bBat = better.battingRating ?? better.batting_rating;
+      const wBat = worse.battingRating ?? worse.batting_rating;
+      return `${better.name} carries higher technical rating (${bBat} vs ${wBat} BAT) in an otherwise tightly matched batting duel.`;
+    }
+    return `Dead-Heat Batting Rivalry — ${p1.name} and ${p2.name} share identical ratings (${p1Bat} BAT) and evenly distributed production in ${fmtLabel}.`;
+  }
+
+  // 3. Both primarily Bowlers
+  if (isP1Bowler && isP2Bowler) {
+    const p1BetterEcon = p1Econ > 0 && (p2Econ === 0 || p1Econ < p2Econ);
+    const p2BetterEcon = p2Econ > 0 && (p1Econ === 0 || p2Econ < p1Econ);
+
+    if ((p1Wkts > p2Wkts && (p1BetterEcon || p1BowlAvg <= p2BowlAvg)) || (p1Wkts === p2Wkts && p1BetterEcon)) {
+      return `${p1.name} commands the bowling duel in ${fmtLabel} (${p1Wkts} wkts @ ${p1Econ} econ vs ${p2Wkts} wkts @ ${p2Econ} econ).`;
+    }
+    if ((p2Wkts > p1Wkts && (p2BetterEcon || p2BowlAvg <= p1BowlAvg)) || (p2Wkts === p1Wkts && p2BetterEcon)) {
+      return `${p2.name} commands the bowling duel in ${fmtLabel} (${p2Wkts} wkts @ ${p2Econ} econ vs ${p1Wkts} wkts @ ${p1Econ} econ).`;
+    }
+    if (p1Wkts > p2Wkts && p2BetterEcon) {
+      return `Contrasting Bowling Threat — ${p1.name} claims higher strike power (${p1Wkts} vs ${p2Wkts} wickets), while ${p2.name} maintains tighter run containment (${p2Econ} vs ${p1Econ} economy).`;
+    }
+    if (p2Wkts > p1Wkts && p1BetterEcon) {
+      return `Contrasting Bowling Threat — ${p2.name} claims higher strike power (${p2Wkts} vs ${p1Wkts} wickets), while ${p1.name} maintains tighter run containment (${p1Econ} vs ${p2Econ} economy).`;
+    }
+    if (p1Bowl !== p2Bowl) {
+      const better = p1Bowl > p2Bowl ? p1 : p2;
+      const worse = p1Bowl > p2Bowl ? p2 : p1;
+      const bBowl = better.bowlingRating ?? better.bowling_rating;
+      const wBowl = worse.bowlingRating ?? worse.bowling_rating;
+      return `${better.name} carries higher bowling rating (${bBowl} vs ${wBowl} BOWL) in a closely fought duel.`;
+    }
+    return `Evenly matched bowling spearheads — ${p1.name} and ${p2.name} produce matching strike capability in ${fmtLabel}.`;
+  }
+
+  // 4. All-Rounder / General Comparison
+  let p1Points = 0;
+  let p2Points = 0;
+  if (p1Ovr > p2Ovr) p1Points += (p1Ovr - p2Ovr) * 1.5;
+  else if (p2Ovr > p1Ovr) p2Points += (p2Ovr - p1Ovr) * 1.5;
+  if (p1Runs > p2Runs) p1Points += 2;
+  else if (p2Runs > p1Runs) p2Points += 2;
+  if (p1Wkts > p2Wkts) p1Points += 2;
+  else if (p2Wkts > p1Wkts) p2Points += 2;
+  if (p1Avg > p2Avg && p1Avg > 0) p1Points += 1.5;
+  else if (p2Avg > p1Avg && p2Avg > 0) p2Points += 1.5;
+  if (p1Econ > 0 && (p2Econ === 0 || p1Econ < p2Econ)) p1Points += 1.5;
+  else if (p2Econ > 0 && (p1Econ === 0 || p2Econ < p1Econ)) p2Points += 1.5;
+
+  if (p1Points > p2Points + 1.5) {
+    const batPart = p1Runs > p2Runs ? `${p1Runs.toLocaleString()} runs` : "";
+    const bowlPart = p1Wkts > p2Wkts ? `${p1Wkts} wickets` : "";
+    const lead = [batPart, bowlPart].filter(Boolean).join(" and ") || `stronger core ratings (${p1Ovr} vs ${p2Ovr} OVR)`;
+    return `${p1.name} claims the decisive competitive edge in ${fmtLabel}, propelled by ${lead}.`;
+  }
+  if (p2Points > p1Points + 1.5) {
+    const batPart = p2Runs > p1Runs ? `${p2Runs.toLocaleString()} runs` : "";
+    const bowlPart = p2Wkts > p1Wkts ? `${p2Wkts} wickets` : "";
+    const lead = [batPart, bowlPart].filter(Boolean).join(" and ") || `stronger core ratings (${p2Ovr} vs ${p1Ovr} OVR)`;
+    return `${p2.name} claims the decisive competitive edge in ${fmtLabel}, propelled by ${lead}.`;
+  }
+
+  return `Evenly Matched Contenders — ${p1.name} (${p1Ovr} OVR) and ${p2.name} (${p2Ovr} OVR) share equal standing and complementary strengths in ${fmtLabel}.`;
+}
+
 async function staticApiRouter(endpoint, options = {}) {
   // 1. Overview
   if (endpoint.startsWith("/api/overview")) {
     try {
-      const res = await fetch("data/overview.json");
+      const res = await safeFetchData("overview.json");
       if (res.ok) return res;
     } catch {}
     return makeJsonResponse({
@@ -130,7 +320,7 @@ async function staticApiRouter(endpoint, options = {}) {
   // 2. Teams
   if (endpoint.startsWith("/api/teams")) {
     try {
-      const res = await fetch("data/teams.json");
+      const res = await safeFetchData("teams.json");
       if (res.ok) return res;
     } catch {}
     return makeJsonResponse({ success: true, teams: [] });
@@ -144,7 +334,7 @@ async function staticApiRouter(endpoint, options = {}) {
   // 4. Recent Completed Matches
   if (endpoint.startsWith("/api/matches/recent") || endpoint === "/api/matches") {
     try {
-      const res = await fetch("data/matches_recent.json");
+      const res = await safeFetchData("matches_recent.json");
       if (res.ok) return res;
     } catch {}
     return makeJsonResponse({ success: true, matches: [] });
@@ -154,7 +344,7 @@ async function staticApiRouter(endpoint, options = {}) {
   if (endpoint.startsWith("/api/matches/")) {
     const matchId = Number(endpoint.split("/api/matches/")[1]?.split("?")[0]);
     try {
-      const res = await fetch("data/matches_recent.json");
+      const res = await safeFetchData("matches_recent.json");
       if (res.ok) {
         const d = await res.json();
         const found = (d.matches || []).find(m => m.id === matchId);
@@ -167,7 +357,7 @@ async function staticApiRouter(endpoint, options = {}) {
   // 6. Tournaments List
   if (endpoint === "/api/tournaments" || endpoint === "/api/tournaments?") {
     try {
-      const res = await fetch("data/tournaments.json");
+      const res = await safeFetchData("tournaments.json");
       if (res.ok) return res;
     } catch {}
     return makeJsonResponse({ success: true, tournaments: [] });
@@ -178,7 +368,7 @@ async function staticApiRouter(endpoint, options = {}) {
     const tId = endpoint.split("/api/tournaments/")[1]?.split("?")[0];
     if (tId) {
       try {
-        const res = await fetch(`data/tournaments/${encodeURIComponent(decodeURIComponent(tId))}.json`);
+        const res = await safeFetchData(`tournaments/${encodeURIComponent(decodeURIComponent(tId))}.json`);
         if (res.ok) return res;
       } catch {}
     }
@@ -192,9 +382,9 @@ async function staticApiRouter(endpoint, options = {}) {
       const scope = u.searchParams.get("scope") || "international";
       const format = u.searchParams.get("format") || (scope === "international" ? "odi" : "first_class");
       const key = `${scope}_${format}`;
-      const res = await fetch(`data/rankings/${key}.json`);
+      const res = await safeFetchData(`rankings/${key}.json`);
       if (res.ok) return res;
-      const bundleRes = await fetch("data/rankings.json");
+      const bundleRes = await safeFetchData("rankings.json");
       if (bundleRes.ok) {
         const bundle = await bundleRes.json();
         if (bundle[key]) return makeJsonResponse(bundle[key]);
@@ -215,7 +405,7 @@ async function staticApiRouter(endpoint, options = {}) {
       const u = new URL("http://dummy" + endpoint);
       const teamName = (u.searchParams.get("name") || "").trim();
       const slug = teamName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-      const res = await fetch(`data/matchups/${slug}.json`);
+      const res = await safeFetchData(`matchups/${slug}.json`);
       if (res.ok) return res;
     } catch {}
     return makeJsonResponse({ success: false, error: "No matchup records found for this team" }, 404);
@@ -234,13 +424,7 @@ async function staticApiRouter(endpoint, options = {}) {
 
       if (player1 && player2) {
         const fmtLabel = fmt === "short" ? "Short Formats (T20/T10)" : fmt === "odi" ? "ODI (50-Over)" : fmt === "test" ? "Test Matches" : "All Formats Combined";
-        const vDiff = (player1.overallRating || 0) - (player2.overallRating || 0);
-        let verdict = `${player1.name} and ${player2.name} are evenly matched in ${fmtLabel}.`;
-        if (vDiff > 1) {
-          verdict = `${player1.name} (${player1.overallRating} OVR) carries the competitive advantage in ${fmtLabel} over ${player2.name} (${player2.overallRating} OVR).`;
-        } else if (vDiff < -1) {
-          verdict = `${player2.name} (${player2.overallRating} OVR) carries the competitive advantage in ${fmtLabel} over ${player1.name} (${player1.overallRating} OVR).`;
-        }
+        const verdict = generateComparisonVerdict(player1, player2, player1.stats || {}, player2.stats || {}, fmtLabel);
         return makeJsonResponse({
           success: true,
           format: fmt,
@@ -259,7 +443,7 @@ async function staticApiRouter(endpoint, options = {}) {
     const pId = Number(endpoint.split("/api/players/")[1]);
     if (pId) {
       try {
-        const res = await fetch(`data/players/${pId}.json`);
+        const res = await safeFetchData(`players/${pId}.json`);
         if (res.ok) return res;
       } catch {}
       const all = await getStaticAllPlayers();
