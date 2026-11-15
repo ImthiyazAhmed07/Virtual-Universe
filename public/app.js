@@ -81,10 +81,296 @@ function setApiBase(url) {
   loadOverviewStats();
 }
 
+function isStaticHostingEnvironment() {
+  const host = window.location.hostname;
+  return host.endsWith("github.io") || window.location.protocol === "file:" || Boolean(window.FORCE_STATIC_MODE);
+}
+
+// In-memory cache for all players dataset
+let _staticAllPlayersCache = null;
+async function getStaticAllPlayers() {
+  if (_staticAllPlayersCache) return _staticAllPlayersCache;
+  try {
+    const res = await fetch("data/players_all.json");
+    if (res.ok) {
+      const data = await res.json();
+      _staticAllPlayersCache = data.players || [];
+      return _staticAllPlayersCache;
+    }
+  } catch (err) {
+    console.warn("Could not load data/players_all.json", err);
+  }
+  return [];
+}
+
+function makeJsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+async function staticApiRouter(endpoint, options = {}) {
+  // 1. Overview
+  if (endpoint.startsWith("/api/overview")) {
+    try {
+      const res = await fetch("data/overview.json");
+      if (res.ok) return res;
+    } catch {}
+    return makeJsonResponse({
+      success: true,
+      liveMatchCount: 0,
+      totalPlayers: 1320,
+      totalMatches: 3990,
+      totalTeams: 165,
+      totalTournaments: 70
+    });
+  }
+
+  // 2. Teams
+  if (endpoint.startsWith("/api/teams")) {
+    try {
+      const res = await fetch("data/teams.json");
+      if (res.ok) return res;
+    } catch {}
+    return makeJsonResponse({ success: true, teams: [] });
+  }
+
+  // 3. Live Matches (Static mode has no active streams)
+  if (endpoint.startsWith("/api/live")) {
+    return makeJsonResponse({ success: true, liveMatchCount: 0, matches: [] });
+  }
+
+  // 4. Recent Completed Matches
+  if (endpoint.startsWith("/api/matches/recent") || endpoint === "/api/matches") {
+    try {
+      const res = await fetch("data/matches_recent.json");
+      if (res.ok) return res;
+    } catch {}
+    return makeJsonResponse({ success: true, matches: [] });
+  }
+
+  // 5. Single Match Scorecard: /api/matches/:id
+  if (endpoint.startsWith("/api/matches/")) {
+    const matchId = Number(endpoint.split("/api/matches/")[1]?.split("?")[0]);
+    try {
+      const res = await fetch("data/matches_recent.json");
+      if (res.ok) {
+        const d = await res.json();
+        const found = (d.matches || []).find(m => m.id === matchId);
+        if (found) return makeJsonResponse({ success: true, match: found });
+      }
+    } catch {}
+    return makeJsonResponse({ success: false, error: "Scorecard archive not found" }, 404);
+  }
+
+  // 6. Tournaments List
+  if (endpoint === "/api/tournaments" || endpoint === "/api/tournaments?") {
+    try {
+      const res = await fetch("data/tournaments.json");
+      if (res.ok) return res;
+    } catch {}
+    return makeJsonResponse({ success: true, tournaments: [] });
+  }
+
+  // 7. Tournament Detail: /api/tournaments/:id
+  if (endpoint.startsWith("/api/tournaments/")) {
+    const tId = endpoint.split("/api/tournaments/")[1]?.split("?")[0];
+    if (tId) {
+      try {
+        const res = await fetch(`data/tournaments/${encodeURIComponent(decodeURIComponent(tId))}.json`);
+        if (res.ok) return res;
+      } catch {}
+    }
+    return makeJsonResponse({ success: false, error: `Tournament ${tId} not found` }, 404);
+  }
+
+  // 8. Rankings: /api/rankings?scope=...&format=...
+  if (endpoint.startsWith("/api/rankings")) {
+    try {
+      const u = new URL("http://dummy" + endpoint);
+      const scope = u.searchParams.get("scope") || "international";
+      const format = u.searchParams.get("format") || (scope === "international" ? "odi" : "first_class");
+      const key = `${scope}_${format}`;
+      const res = await fetch(`data/rankings/${key}.json`);
+      if (res.ok) return res;
+      const bundleRes = await fetch("data/rankings.json");
+      if (bundleRes.ok) {
+        const bundle = await bundleRes.json();
+        if (bundle[key]) return makeJsonResponse(bundle[key]);
+      }
+    } catch {}
+    return makeJsonResponse({
+      success: true,
+      scope: "international",
+      format: "odi",
+      rankings: { batters: [], bowlers: [], allRounders: [] },
+      leaderboards: { mostRuns: [], mostWickets: [], highestScores: [], bestBowling: [] }
+    });
+  }
+
+  // 9. Opposition Team Matchups: /api/matchups/team?name=...
+  if (endpoint.startsWith("/api/matchups/team")) {
+    try {
+      const u = new URL("http://dummy" + endpoint);
+      const teamName = (u.searchParams.get("name") || "").trim();
+      const slug = teamName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const res = await fetch(`data/matchups/${slug}.json`);
+      if (res.ok) return res;
+    } catch {}
+    return makeJsonResponse({ success: false, error: "No matchup records found for this team" }, 404);
+  }
+
+  // 10. Player Compare: /api/players/compare?p1=...&p2=...
+  if (endpoint.startsWith("/api/players/compare")) {
+    try {
+      const u = new URL("http://dummy" + endpoint);
+      const p1Q = (u.searchParams.get("p1") || "").trim().toLowerCase();
+      const p2Q = (u.searchParams.get("p2") || "").trim().toLowerCase();
+      const fmt = u.searchParams.get("format") || "all";
+      const all = await getStaticAllPlayers();
+      const player1 = all.find(p => p.name.toLowerCase() === p1Q) || all.find(p => p.name.toLowerCase().includes(p1Q));
+      const player2 = all.find(p => p.name.toLowerCase() === p2Q) || all.find(p => p.name.toLowerCase().includes(p2Q));
+
+      if (player1 && player2) {
+        const fmtLabel = fmt === "short" ? "Short Formats (T20/T10)" : fmt === "odi" ? "ODI (50-Over)" : fmt === "test" ? "Test Matches" : "All Formats Combined";
+        const vDiff = (player1.overallRating || 0) - (player2.overallRating || 0);
+        let verdict = `${player1.name} and ${player2.name} are evenly matched in ${fmtLabel}.`;
+        if (vDiff > 1) {
+          verdict = `${player1.name} (${player1.overallRating} OVR) carries the competitive advantage in ${fmtLabel} over ${player2.name} (${player2.overallRating} OVR).`;
+        } else if (vDiff < -1) {
+          verdict = `${player2.name} (${player2.overallRating} OVR) carries the competitive advantage in ${fmtLabel} over ${player1.name} (${player1.overallRating} OVR).`;
+        }
+        return makeJsonResponse({
+          success: true,
+          format: fmt,
+          formatLabel: fmtLabel,
+          comparison: { verdict },
+          player1,
+          player2
+        });
+      }
+    } catch {}
+    return makeJsonResponse({ success: false, error: "One or both players not found for comparison" }, 404);
+  }
+
+  // 11. Individual Player Dossier: /api/players/:id
+  if (endpoint.startsWith("/api/players/") && !endpoint.includes("?")) {
+    const pId = Number(endpoint.split("/api/players/")[1]);
+    if (pId) {
+      try {
+        const res = await fetch(`data/players/${pId}.json`);
+        if (res.ok) return res;
+      } catch {}
+      const all = await getStaticAllPlayers();
+      const found = all.find(p => p.id === pId);
+      if (found) {
+        return makeJsonResponse({
+          success: true,
+          player: found,
+          stats: found.stats,
+          performances: [],
+          vsTeams: []
+        });
+      }
+    }
+    return makeJsonResponse({ success: false, error: "Player not found" }, 404);
+  }
+
+  // 12. Player Directory & Search: /api/players?...
+  if (endpoint.startsWith("/api/players")) {
+    try {
+      const u = new URL("http://dummy" + endpoint);
+      const search = (u.searchParams.get("search") || "").trim().toLowerCase();
+      const country = u.searchParams.get("country");
+      const team = u.searchParams.get("team");
+      const role = u.searchParams.get("role");
+      const tier = u.searchParams.get("tier");
+      const trait = u.searchParams.get("trait");
+      const battingStyle = u.searchParams.get("battingStyle");
+      const bowlingStyle = u.searchParams.get("bowlingStyle");
+      const sort = u.searchParams.get("sort") || "overall";
+      const page = Math.max(1, Number(u.searchParams.get("page")) || 1);
+      const limit = Math.max(1, Number(u.searchParams.get("limit")) || 36);
+
+      const all = await getStaticAllPlayers();
+      let filtered = all.filter(p => {
+        if (search) {
+          const n = (p.name || "").toLowerCase();
+          const c = (p.country || "").toLowerCase();
+          const nat = (p.nationality || "").toLowerCase();
+          const t = (p.teams || []).some(tm => tm.toLowerCase().includes(search));
+          if (!n.includes(search) && !c.includes(search) && !nat.includes(search) && !t) return false;
+        }
+        if (country && country !== "All" && p.country !== country) return false;
+        if (team && team !== "All" && !(p.teams || []).includes(team)) return false;
+        if (role && role !== "All") {
+          const arch = (p.archetype || "").toLowerCase();
+          if (role === "batter" && !arch.includes("batting") && !arch.includes("batter") && !arch.includes("aggressive") && !arch.includes("defensive") && !arch.includes("anchor") && !arch.includes("orthodox")) return false;
+          if (role === "bowler" && !arch.includes("bowling") && !arch.includes("pacer") && !arch.includes("spinner") && !arch.includes("express")) return false;
+          if (role === "all_rounder" && !arch.includes("all_rounder")) return false;
+          if (role === "wicket_keeper" && !p.isWicketKeeper) return false;
+        }
+        if (tier && tier !== "All" && p.tier !== tier) return false;
+        if (trait && trait !== "All" && (!p.traits || !p.traits[trait])) return false;
+        if (battingStyle && battingStyle !== "All" && p.battingStyle !== battingStyle) return false;
+        if (bowlingStyle && bowlingStyle !== "All" && p.bowlingStyle !== bowlingStyle) return false;
+        return true;
+      });
+
+      // Sorting
+      filtered.sort((a, b) => {
+        if (sort === "runs") return (b.stats.runs || 0) - (a.stats.runs || 0);
+        if (sort === "wickets") return (b.stats.wickets || 0) - (a.stats.wickets || 0);
+        if (sort === "batting_rating") return (b.battingRating || 0) - (a.battingRating || 0);
+        if (sort === "bowling_rating") return (b.bowlingRating || 0) - (a.bowlingRating || 0);
+        if (sort === "name") return a.name.localeCompare(b.name);
+        return (b.overallRating || 0) - (a.overallRating || 0);
+      });
+
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const pageItems = filtered.slice((page - 1) * limit, page * limit);
+
+      return makeJsonResponse({
+        success: true,
+        total,
+        page,
+        limit,
+        totalPages,
+        players: pageItems
+      });
+    } catch (e) {
+      console.warn("Static players router error:", e);
+    }
+  }
+
+  return makeJsonResponse({ success: false, error: "Endpoint not found" }, 404);
+}
+
 async function apiFetch(endpoint, options = {}) {
   const base = getApiBase();
-  const fullUrl = base ? `${base}${endpoint}` : endpoint;
-  return fetch(fullUrl, options);
+
+  // 1. Explicitly configured remote API server
+  if (base) {
+    return fetch(`${base}${endpoint}`, options);
+  }
+
+  // 2. GitHub Pages or static host -> direct to static data router
+  if (isStaticHostingEnvironment()) {
+    return staticApiRouter(endpoint, options);
+  }
+
+  // 3. Localhost: try live server first, fallback to static router if stopped or 404/5xx
+  try {
+    const res = await fetch(endpoint, options);
+    if (res.ok || res.status === 400 || res.status === 401 || res.status === 403) {
+      return res;
+    }
+    return staticApiRouter(endpoint, options);
+  } catch (err) {
+    return staticApiRouter(endpoint, options);
+  }
 }
 
 function updateApiStatusIndicator() {
